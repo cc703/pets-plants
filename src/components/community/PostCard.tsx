@@ -11,6 +11,8 @@ import {
   TouchableOpacity,
   Animated,
   Platform,
+  Image,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, BorderRadius, FontSize, Shadows } from '../../utils/theme';
@@ -30,6 +32,7 @@ interface PostCardProps {
 }
 
 const MAX_LINES = 3;
+const MEDIA_WIDTH = Dimensions.get('window').width - Spacing.xl * 2 - 52 - Spacing.md;
 
 export default function PostCard({
   post,
@@ -77,8 +80,7 @@ export default function PostCard({
     [showFullContent],
   );
 
-  const avatarEmoji =
-    post.user.level >= 15 ? '🐕' : post.user.level >= 10 ? '🐶' : post.user.level >= 5 ? '😺' : '🐱';
+  const avatarInitial = post.user.nickname.trim().slice(0, 1) || '宠';
 
   return (
     <TouchableOpacity
@@ -87,143 +89,161 @@ export default function PostCard({
       activeOpacity={0.85}
       onPress={() => onPress?.(post)}
     >
-      {/* 头部 */}
-      <View style={styles.header}>
+      <View style={styles.timelineRow}>
         <TouchableOpacity
           style={styles.avatarWrap}
           onPress={() => onUserPress?.(post.user.id)}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={`查看${post.user.nickname}的主页`}
         >
-          <View style={styles.avatar}>
-            <Text style={styles.avatarEmoji}>{avatarEmoji}</Text>
-          </View>
+          {post.user.avatarUrl ? (
+            <Image source={{ uri: post.user.avatarUrl }} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatar, { backgroundColor: getLevelColor(post.user.level) + '18' }]}>
+              <Text style={[styles.avatarInitial, { color: getLevelColor(post.user.level) }]}>{avatarInitial}</Text>
+            </View>
+          )}
         </TouchableOpacity>
-        <View style={styles.userInfo}>
-          <View style={styles.userNameRow}>
-            <TouchableOpacity onPress={() => onUserPress?.(post.user.id)}>
-              <Text style={styles.userName}>{post.user.nickname}</Text>
-            </TouchableOpacity>
-            <View
-              style={[
-                styles.levelBadge,
-                { backgroundColor: getLevelColor(post.user.level) + '20' },
-              ]}
+
+        <View style={styles.momentBody}>
+          {/* 头部 */}
+          <View style={styles.header}>
+            <View style={styles.userInfo}>
+              <TouchableOpacity
+                onPress={() => onUserPress?.(post.user.id)}
+                accessibilityRole="button"
+                accessibilityLabel={`查看${post.user.nickname}的主页`}
+              >
+                <Text style={styles.userName}>{post.user.nickname}</Text>
+              </TouchableOpacity>
+              <View style={styles.metaRow}>
+                <Text style={styles.time}>{formatTime(post.createdAt)}</Text>
+                <View style={styles.metaDot} />
+                <Text style={styles.metaText}>Lv.{post.user.level}</Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={styles.moreBtn}
+              accessibilityRole="button"
+              accessibilityLabel="更多动态操作"
             >
+              <Ionicons
+                name="ellipsis-horizontal"
+                size={17}
+                color={Colors.textLight}
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* 内容 */}
+          {showFullContent ? (
+            <Text style={styles.content}>{post.content}</Text>
+          ) : (
+            <Text
+              style={styles.content}
+              numberOfLines={expanded ? undefined : MAX_LINES}
+              onTextLayout={handleTextLayout}
+            >
+              {post.content}
+            </Text>
+          )}
+          {!showFullContent && textTruncated && !expanded && (
+            <TouchableOpacity
+              onPress={() => setExpanded(true)}
+              accessibilityRole="button"
+              accessibilityLabel="展开全文"
+            >
+              <Text style={styles.expandText}>展开全文</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* 图片 */}
+          <ImageGrid images={post.images} maxWidth={MEDIA_WIDTH} />
+
+          {/* 标签 */}
+          {post.tags.length > 0 && (
+            <View style={styles.tagRow}>
+              {post.tags.map((tag, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={styles.tag}
+                  onPress={() => onTagPress?.(tag)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`查看话题${tag}`}
+                >
+                  <Text style={styles.tagText}>#{tag}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          {/* 操作栏 */}
+          <View style={styles.actions}>
+            <TouchableOpacity
+              testID={`post-${post.id}-like-btn`}
+              style={styles.actionBtn}
+              onPress={handleLike}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={post.isLiked ? '取消点赞' : '点赞'}
+            >
+              <Animated.View style={{ transform: [{ scale: likeScale }] }}>
+                <Ionicons
+                  name={post.isLiked ? 'heart' : 'heart-outline'}
+                  size={18}
+                  color={post.isLiked ? Colors.accent : Colors.textSecondary}
+                />
+              </Animated.View>
+              <Text
+                style={[styles.actionText, post.isLiked && styles.actionTextActive]}
+              >
+                {post.likeCount > 0 ? post.likeCount : '赞'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              testID={`post-${post.id}-comment-btn`}
+              style={styles.actionBtn}
+              onPress={() => onComment?.(post)}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="评论"
+            >
+              <Ionicons
+                name="chatbubble-outline"
+                size={16}
+                color={Colors.textSecondary}
+              />
+              <Text style={styles.actionText}>
+                {post.commentCount > 0 ? post.commentCount : '评论'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              testID={`post-${post.id}-bookmark-btn`}
+              style={styles.actionBtn}
+              onPress={() => onBookmark?.(post)}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={post.isBookmarked ? '取消收藏' : '收藏'}
+            >
+              <Ionicons
+                name={post.isBookmarked ? 'bookmark' : 'bookmark-outline'}
+                size={16}
+                color={post.isBookmarked ? Colors.secondary : Colors.textSecondary}
+              />
               <Text
                 style={[
-                  styles.levelText,
-                  { color: getLevelColor(post.user.level) },
+                  styles.actionText,
+                  post.isBookmarked && { color: Colors.secondary },
                 ]}
               >
-                Lv.{post.user.level}
+                {post.bookmarkCount > 0 ? post.bookmarkCount : '收藏'}
               </Text>
-            </View>
-          </View>
-          <Text style={styles.time}>{formatTime(post.createdAt)}</Text>
-        </View>
-        <TouchableOpacity style={styles.moreBtn}>
-          <Ionicons
-            name="ellipsis-horizontal"
-            size={16}
-            color={Colors.textLight}
-          />
-        </TouchableOpacity>
-      </View>
-
-      {/* 内容 */}
-      {showFullContent ? (
-        <Text style={styles.content}>{post.content}</Text>
-      ) : (
-        <Text
-          style={styles.content}
-          numberOfLines={expanded ? undefined : MAX_LINES}
-          onTextLayout={handleTextLayout}
-        >
-          {post.content}
-        </Text>
-      )}
-      {!showFullContent && textTruncated && !expanded && (
-        <TouchableOpacity onPress={() => setExpanded(true)}>
-          <Text style={styles.expandText}>展开全文</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* 图片 */}
-      <ImageGrid images={post.images} />
-
-      {/* 标签 */}
-      {post.tags.length > 0 && (
-        <View style={styles.tagRow}>
-          {post.tags.map((tag, i) => (
-            <TouchableOpacity
-              key={i}
-              style={styles.tag}
-              onPress={() => onTagPress?.(tag)}
-            >
-              <Text style={styles.tagText}>#{tag}</Text>
             </TouchableOpacity>
-          ))}
+          </View>
         </View>
-      )}
-
-      {/* 操作栏 */}
-      <View style={styles.actions}>
-        <TouchableOpacity
-          testID={`post-${post.id}-like-btn`}
-          style={styles.actionBtn}
-          onPress={handleLike}
-          activeOpacity={0.7}
-        >
-          <Animated.View style={{ transform: [{ scale: likeScale }] }}>
-            <Ionicons
-              name={post.isLiked ? 'heart' : 'heart-outline'}
-              size={18}
-              color={post.isLiked ? Colors.accent : Colors.textSecondary}
-            />
-          </Animated.View>
-          <Text
-            style={[styles.actionText, post.isLiked && styles.actionTextActive]}
-          >
-            {post.likeCount > 0 ? post.likeCount : '赞'}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          testID={`post-${post.id}-comment-btn`}
-          style={styles.actionBtn}
-          onPress={() => onComment?.(post)}
-          activeOpacity={0.7}
-        >
-          <Ionicons
-            name="chatbubble-outline"
-            size={16}
-            color={Colors.textSecondary}
-          />
-          <Text style={styles.actionText}>
-            {post.commentCount > 0 ? post.commentCount : '评论'}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          testID={`post-${post.id}-bookmark-btn`}
-          style={styles.actionBtn}
-          onPress={() => onBookmark?.(post)}
-          activeOpacity={0.7}
-        >
-          <Ionicons
-            name={post.isBookmarked ? 'bookmark' : 'bookmark-outline'}
-            size={16}
-            color={post.isBookmarked ? Colors.secondary : Colors.textSecondary}
-          />
-          <Text
-            style={[
-              styles.actionText,
-              post.isBookmarked && { color: Colors.secondary },
-            ]}
-          >
-            {post.bookmarkCount > 0 ? post.bookmarkCount : '收藏'}
-          </Text>
-        </TouchableOpacity>
       </View>
     </TouchableOpacity>
   );
@@ -232,84 +252,98 @@ export default function PostCard({
 const styles = StyleSheet.create({
   card: {
     backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    marginBottom: Spacing.md,
-    ...Shadows.sm,
+    borderRadius: BorderRadius.md,
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+    marginHorizontal: Spacing.xl,
+    marginBottom: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.border + '80',
+  },
+  timelineRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
+    alignItems: 'flex-start',
+    marginBottom: Spacing.sm,
   },
   avatarWrap: {
-    marginRight: Spacing.sm,
+    marginRight: Spacing.md,
   },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.background,
+    width: 44,
+    height: 44,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  avatarEmoji: {
-    fontSize: 20,
+  avatarInitial: {
+    fontSize: FontSize.lg,
+    fontWeight: '800',
   },
   userInfo: {
     flex: 1,
   },
-  userNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
+  momentBody: {
+    flex: 1,
+    minWidth: 0,
   },
   userName: {
     fontSize: FontSize.md,
-    fontWeight: '600',
-    color: Colors.text,
-  },
-  levelBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: BorderRadius.sm,
-  },
-  levelText: {
-    fontSize: 10,
     fontWeight: '700',
+    color: Colors.primaryDark,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
   },
   time: {
     fontSize: FontSize.xs,
     color: Colors.textSecondary,
-    marginTop: 2,
+  },
+  metaDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: Colors.textLight,
+  },
+  metaText: {
+    fontSize: FontSize.xs,
+    color: Colors.textLight,
   },
   moreBtn: {
-    width: 32,
-    height: 32,
+    width: 28,
+    height: 26,
     justifyContent: 'center',
     alignItems: 'center',
+    borderRadius: 8,
+    backgroundColor: Colors.background,
   },
   content: {
     fontSize: FontSize.md,
     color: Colors.text,
-    lineHeight: 22,
+    lineHeight: 23,
   },
   expandText: {
     fontSize: FontSize.sm,
-    color: Colors.primary,
+    color: Colors.primaryDark,
     marginTop: 4,
-    fontWeight: '500',
+    fontWeight: '700',
   },
   tagRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: Spacing.sm,
-    marginTop: Spacing.md,
+    marginTop: Spacing.sm,
   },
   tag: {
-    backgroundColor: Colors.primary + '10',
+    backgroundColor: Colors.background,
     paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: BorderRadius.sm,
   },
   tagText: {
@@ -318,16 +352,18 @@ const styles = StyleSheet.create({
   },
   actions: {
     flexDirection: 'row',
-    marginTop: Spacing.md,
-    paddingTop: Spacing.md,
-    borderTopWidth: 0.5,
-    borderTopColor: Colors.border,
-    gap: Spacing.xl,
+    justifyContent: 'flex-start',
+    marginTop: Spacing.sm,
+    gap: Spacing.lg,
   },
   actionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
+    minHeight: 30,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.background,
   },
   actionText: {
     fontSize: FontSize.sm,

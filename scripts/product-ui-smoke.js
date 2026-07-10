@@ -218,8 +218,15 @@ async function ensureChrome() {
 }
 
 async function openClient() {
-  const pages = await waitForJson(`http://127.0.0.1:${DEBUG_PORT}/json/list`);
-  const page = pages.find((item) => item.type === 'page') || pages[0];
+  const page = await waitFor(async () => {
+    const pages = await waitForJson(`http://127.0.0.1:${DEBUG_PORT}/json/list`);
+    return pages.find(
+      (item) =>
+        item.type === 'page' &&
+        item.webSocketDebuggerUrl &&
+        item.url?.startsWith(FRONTEND_URL),
+    );
+  }, 30000, 300);
   if (!page) throw new Error('No debuggable page found');
   const client = new CdpClient(page.webSocketDebuggerUrl);
   await client.connect();
@@ -262,44 +269,21 @@ async function back(client) {
 }
 
 async function clickTestId(client, testId) {
-  const target = await client.evaluate(`
+  const clicked = await waitFor(() => client.evaluate(`
     (function() {
       const el = document.querySelector('[data-testid="${testId}"]');
-      if (!el) return null;
+      if (!el) return false;
       el.scrollIntoView({ block: 'center', inline: 'center' });
-      const rect = el.getBoundingClientRect();
-      return {
-        x: rect.left + rect.width / 2,
-        y: rect.top + rect.height / 2,
-      };
+      el.click();
+      return true;
     })();
-  `);
-  if (!target) throw new Error(`Missing testId: ${testId}`);
-  await client.send('Input.dispatchMouseEvent', {
-    type: 'mouseMoved',
-    x: target.x,
-    y: target.y,
-    button: 'none',
-  });
-  await client.send('Input.dispatchMouseEvent', {
-    type: 'mousePressed',
-    x: target.x,
-    y: target.y,
-    button: 'left',
-    clickCount: 1,
-  });
-  await client.send('Input.dispatchMouseEvent', {
-    type: 'mouseReleased',
-    x: target.x,
-    y: target.y,
-    button: 'left',
-    clickCount: 1,
-  });
+  `), 60000, 300);
+  if (!clicked) throw new Error(`Missing testId: ${testId}`);
   await wait(1200);
 }
 
 async function fillByTestId(client, testId, value) {
-  const ok = await client.evaluate(`
+  const ok = await waitFor(() => client.evaluate(`
     (function() {
       const el = document.querySelector('[data-testid="${testId}"]');
       if (!el) return false;
@@ -316,8 +300,11 @@ async function fillByTestId(client, testId, value) {
       el.dispatchEvent(new Event('change', { bubbles: true }));
       return true;
     })();
-  `);
-  if (!ok) throw new Error(`Missing input testId: ${testId}`);
+  `), 60000, 300);
+  if (!ok) {
+    const state = await pageState(client);
+    throw new Error(`Missing input testId: ${testId}; state=${JSON.stringify(state)}`);
+  }
   await client.send('Input.insertText', { text: value });
   await client.evaluate(`
     (function() {

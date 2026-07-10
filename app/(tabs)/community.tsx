@@ -35,6 +35,15 @@ const circles: CommunityCircle[] = [
   { id: 'c6', name: '哈士奇圈', count: '6.2千', emoji: '🐶' },
 ];
 
+const circleIcons: Record<string, keyof typeof Ionicons.glyphMap> = {
+  c1: 'sparkles-outline',
+  c2: 'leaf-outline',
+  c3: 'walk-outline',
+  c4: 'sunny-outline',
+  c5: 'home-outline',
+  c6: 'flash-outline',
+};
+
 export default function CommunityPage() {
   const router = useRouter();
   const { status } = useAuth();
@@ -168,11 +177,35 @@ export default function CommunityPage() {
 
   const renderHeader = () => (
     <View>
+      <View style={styles.momentsHero}>
+        <View style={styles.heroTextWrap}>
+          <Text style={styles.heroEyebrow}>好友动态</Text>
+          <Text style={styles.heroTitle}>看看大家今天和毛孩子发生了什么</Text>
+          <Text style={styles.heroSubtitle}>像朋友圈一样浏览近况、照片和养宠经验。</Text>
+        </View>
+        <TouchableOpacity
+          testID="community-create-post-hero-btn"
+          style={styles.heroPostBtn}
+          onPress={handleCreatePost}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="发布宠物动态"
+        >
+          <Ionicons name="camera" size={17} color={Colors.surface} />
+          <Text style={styles.heroPostText}>发布动态</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* 品种圈子 */}
-      <View style={styles.section}>
+      <View style={styles.circleStrip}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>品种圈子</Text>
-          <TouchableOpacity testID="community-see-all-circles-btn" onPress={() => router.push('/circle')}>
+          <Text style={styles.sectionTitle}>常逛圈子</Text>
+          <TouchableOpacity
+            testID="community-see-all-circles-btn"
+            onPress={() => router.push('/circle')}
+            accessibilityRole="button"
+            accessibilityLabel="查看全部圈子"
+          >
             <Text style={styles.seeAll}>全部</Text>
           </TouchableOpacity>
         </View>
@@ -190,13 +223,26 @@ export default function CommunityPage() {
                   selectedCircle === item.id && styles.circleCardActive,
                 ]}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`${selectedCircle === item.id ? '取消筛选' : '筛选'}${item.name}`}
                 onPress={() => {
                   setSelectedCircle(
                     selectedCircle === item.id ? null : item.id,
                   );
                 }}
               >
-                <Text style={styles.circleEmoji}>{item.emoji}</Text>
+                <View
+                  style={[
+                    styles.circleIcon,
+                    selectedCircle === item.id && styles.circleIconActive,
+                  ]}
+                >
+                  <Ionicons
+                    name={circleIcons[item.id] || 'paw-outline'}
+                    size={18}
+                    color={selectedCircle === item.id ? Colors.surface : Colors.primary}
+                  />
+                </View>
                 <Text
                   style={[
                     styles.circleName,
@@ -213,50 +259,48 @@ export default function CommunityPage() {
       </View>
 
       {/* 标签切换 */}
-      <View style={styles.tabRow}>
-        <TouchableOpacity
-          testID="community-tab-hot"
-          style={[styles.tabItem, activeTab === 'hot' && styles.tabItemActive]}
-          onPress={() => handleTabChange('hot')}
-        >
-          <Ionicons
-            name="flame"
-            size={14}
-            color={activeTab === 'hot' ? Colors.surface : Colors.textSecondary}
-          />
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === 'hot' && styles.tabTextActive,
-            ]}
+      <View style={styles.feedToolbar}>
+        <View>
+          <Text style={styles.feedTitle}>宠友动态</Text>
+          <Text style={styles.feedSubtitle}>{selectedCircle ? '已按圈子筛选' : '全部圈子正在显示'}</Text>
+        </View>
+        <View style={styles.tabRow}>
+          <TouchableOpacity
+            testID="community-tab-hot"
+            style={[styles.tabItem, activeTab === 'hot' && styles.tabItemActive]}
+            onPress={() => handleTabChange('hot')}
+            accessibilityRole="button"
+            accessibilityLabel="切换到热门动态"
           >
-            热门动态
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          testID="community-tab-latest"
-          style={[
-            styles.tabItem,
-            activeTab === 'latest' && styles.tabItemActive,
-          ]}
-          onPress={() => handleTabChange('latest')}
-        >
-          <Ionicons
-            name="time"
-            size={14}
-            color={
-              activeTab === 'latest' ? Colors.surface : Colors.textSecondary
-            }
-          />
-          <Text
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === 'hot' && styles.tabTextActive,
+              ]}
+            >
+              热门
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            testID="community-tab-latest"
             style={[
-              styles.tabText,
-              activeTab === 'latest' && styles.tabTextActive,
+              styles.tabItem,
+              activeTab === 'latest' && styles.tabItemActive,
             ]}
+            onPress={() => handleTabChange('latest')}
+            accessibilityRole="button"
+            accessibilityLabel="切换到最新动态"
           >
-            最新发布
-          </Text>
-        </TouchableOpacity>
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === 'latest' && styles.tabTextActive,
+              ]}
+            >
+              最新
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -309,15 +353,18 @@ export default function CommunityPage() {
             style={styles.wikiBtn}
             onPress={() => router.push('/(tabs)/wiki')}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="打开品种百科"
           >
             <Ionicons name="book" size={16} color={Colors.primary} />
-            <Text style={styles.wikiBtnText}>品种百科</Text>
           </TouchableOpacity>
           <TouchableOpacity
             testID="community-create-post-btn"
             style={styles.postBtn}
             onPress={handleCreatePost}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="发布动态"
           >
             <Ionicons name="add" size={20} color={Colors.surface} />
           </TouchableOpacity>
@@ -378,7 +425,7 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.md,
   },
   title: {
-    fontSize: FontSize.title,
+    fontSize: FontSize.xxl,
     fontWeight: '700',
     color: Colors.text,
   },
@@ -389,17 +436,13 @@ const styles = StyleSheet.create({
   },
   wikiBtn: {
     height: 36,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.primary + '12',
+    width: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.surface,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-  },
-  wikiBtnText: {
-    fontSize: FontSize.xs,
-    color: Colors.primary,
-    fontWeight: '700',
+    justifyContent: 'center',
+    ...Shadows.sm,
   },
   postBtn: {
     width: 36,
@@ -408,12 +451,59 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
+    ...Shadows.sm,
   },
   content: {
     paddingBottom: 100,
   },
-  section: {
-    marginTop: Spacing.xl,
+  momentsHero: {
+    marginHorizontal: Spacing.xl,
+    marginTop: Spacing.sm,
+    borderRadius: BorderRadius.lg,
+    backgroundColor: Colors.surface,
+    padding: Spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    ...Shadows.md,
+  },
+  heroTextWrap: {
+    flex: 1,
+  },
+  heroEyebrow: {
+    fontSize: FontSize.xs,
+    color: Colors.primaryDark,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  heroTitle: {
+    fontSize: FontSize.lg,
+    color: Colors.text,
+    fontWeight: '800',
+    lineHeight: 23,
+  },
+  heroSubtitle: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    marginTop: 6,
+    lineHeight: 17,
+  },
+  heroPostBtn: {
+    minHeight: 40,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    gap: 5,
+  },
+  heroPostText: {
+    fontSize: FontSize.xs,
+    color: Colors.surface,
+    fontWeight: '700',
+  },
+  circleStrip: {
+    marginTop: Spacing.lg,
     paddingHorizontal: Spacing.xl,
   },
   sectionHeader: {
@@ -423,8 +513,8 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   sectionTitle: {
-    fontSize: FontSize.xl,
-    fontWeight: '600',
+    fontSize: FontSize.md,
+    fontWeight: '700',
     color: Colors.text,
   },
   seeAll: {
@@ -433,22 +523,31 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   circleCard: {
-    width: 80,
+    width: 78,
     alignItems: 'center',
     marginRight: Spacing.md,
     backgroundColor: Colors.surface,
     borderRadius: BorderRadius.md,
-    padding: Spacing.md,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.sm,
     ...Shadows.sm,
   },
   circleCardActive: {
-    backgroundColor: Colors.primary + '10',
+    backgroundColor: Colors.primary + '0F',
     borderWidth: 1.5,
     borderColor: Colors.primary,
   },
-  circleEmoji: {
-    fontSize: 28,
-    marginBottom: 4,
+  circleIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    backgroundColor: Colors.primary + '12',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
+  circleIconActive: {
+    backgroundColor: Colors.primary,
   },
   circleName: {
     fontSize: FontSize.xs,
@@ -460,20 +559,37 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: 2,
   },
+  feedToolbar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.xl,
+    marginTop: Spacing.lg,
+    marginBottom: Spacing.sm,
+  },
+  feedTitle: {
+    fontSize: FontSize.lg,
+    fontWeight: '800',
+    color: Colors.text,
+  },
+  feedSubtitle: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
   tabRow: {
     flexDirection: 'row',
-    paddingHorizontal: Spacing.xl,
-    marginTop: Spacing.xl,
-    gap: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.full,
+    padding: 3,
+    ...Shadows.sm,
   },
   tabItem: {
-    flexDirection: 'row',
+    minWidth: 48,
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.xl,
-    backgroundColor: Colors.surface,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs + 2,
+    borderRadius: BorderRadius.full,
   },
   tabItemActive: {
     backgroundColor: Colors.primary,

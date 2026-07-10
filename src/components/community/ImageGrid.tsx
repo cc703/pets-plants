@@ -25,9 +25,10 @@ const SINGLE_IMAGE_MAX_HEIGHT = 240;
 interface ImageGridProps {
   images: string[];
   onImagePress?: (index: number) => void;
+  maxWidth?: number;
 }
 
-export default function ImageGrid({ images, onImagePress }: ImageGridProps) {
+export default function ImageGrid({ images, onImagePress, maxWidth }: ImageGridProps) {
   const [viewerVisible, setViewerVisible] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
 
@@ -68,7 +69,7 @@ export default function ImageGrid({ images, onImagePress }: ImageGridProps) {
 
   // 两张图片
   if (images.length === 2) {
-    const itemSize = (AVAILABLE_WIDTH - GRID_GAP) / 2;
+    const itemSize = ((maxWidth || AVAILABLE_WIDTH) - GRID_GAP) / 2;
     return (
       <>
         <View style={styles.row}>
@@ -99,7 +100,7 @@ export default function ImageGrid({ images, onImagePress }: ImageGridProps) {
 
   // 3-9张九宫格
   const cols = 3;
-  const itemSize = (AVAILABLE_WIDTH - GRID_GAP * (cols - 1)) / cols;
+  const itemSize = ((maxWidth || AVAILABLE_WIDTH) - GRID_GAP * (cols - 1)) / cols;
 
   return (
     <>
