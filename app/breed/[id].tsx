@@ -109,7 +109,7 @@ export default function BreedDetailPage() {
   const scrollY = useRef(new Animated.Value(0)).current;
   const heartScale = useRef(new Animated.Value(1)).current;
   const voiceKey = breed ? `${breed.species}-${breed.id}` : '';
-  const voiceSource = breed?.species === 'cat' ? CAT_VOICE : DOG_VOICE;
+  const voiceSource = breed?.voiceUrl || (breed?.species === 'cat' ? CAT_VOICE : DOG_VOICE);
   const isPlaying = !!breed && playingKey === voiceKey;
 
   // 播放品种声音

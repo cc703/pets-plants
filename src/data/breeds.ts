@@ -1,26 +1,385 @@
 import type { Breed, Species } from '../types';
 
 const CAT_GALLERY_POOL = [
-  'https://cdn2.thecatapi.com/images/0XYvRd7oD.jpg',
-  'https://cdn2.thecatapi.com/images/O3btzLlsO.png',
-  'https://cdn2.thecatapi.com/images/ai6Jps4sx.jpg',
-  'https://cdn2.thecatapi.com/images/5iYq9AbT7.jpg',
-  'https://cdn2.thecatapi.com/images/BfKSs3yVj.jpg',
-  'https://cdn2.thecatapi.com/images/3nS6s2o6a.jpg',
-  'https://cdn2.thecatapi.com/images/2js.jpg',
-  'https://cdn2.thecatapi.com/images/5at.jpg',
+  'https://cdn2.thecatapi.com/images/y0wAin0Ei.jpg',
+  'https://cdn2.thecatapi.com/images/GrPErz7EA.jpg',
+  'https://cdn2.thecatapi.com/images/__tqyLW91.jpg',
+  'https://cdn2.thecatapi.com/images/8pCFG7gCV.jpg',
+  'https://cdn2.thecatapi.com/images/Y_z-aBHvf.jpg',
+  'https://cdn2.thecatapi.com/images/DdmsQrCAv.jpg',
+  'https://cdn2.thecatapi.com/images/BkksyH95Z.jpg',
+  'https://cdn2.thecatapi.com/images/OhTkBTPnD.jpg',
 ];
 
 const DOG_GALLERY_POOL = [
-  'https://cdn2.thedogapi.com/images/B1bpEJlVx.jpg',
-  'https://cdn2.thedogapi.com/images/HkxkFJVEX.jpg',
-  'https://cdn2.thedogapi.com/images/S17ZilFXE.jpg',
-  'https://cdn2.thedogapi.com/images/B1uW7l5VX.jpg',
-  'https://cdn2.thedogapi.com/images/S1T8Fe4V4.jpg',
-  'https://cdn2.thedogapi.com/images/B1u-z9cVX.jpg',
-  'https://cdn2.thedogapi.com/images/SyXN-e5VX.jpg',
-  'https://cdn2.thedogapi.com/images/HJxcoxVEX.jpg',
+  'https://images.dog.ceo/breeds/retriever-golden/n02099601_1028.jpg',
+  'https://images.dog.ceo/breeds/corgi-cardigan/n02113186_6415.jpg',
+  'https://images.dog.ceo/breeds/husky/n02110185_12498.jpg',
+  'https://images.dog.ceo/breeds/labrador/n02099712_7411.jpg',
+  'https://images.dog.ceo/breeds/samoyed/n02111889_1714.jpg',
+  'https://images.dog.ceo/breeds/shiba/mamehiko01.jpg',
+  'https://images.dog.ceo/breeds/german-shepherd/n02106662_7960.jpg',
+  'https://images.dog.ceo/breeds/mountain-bernese/n02107683_4411.jpg',
 ];
+
+const CAT_VOICE_URL = 'https://assets.mixkit.co/active_storage/sfx/93/93-preview.mp3';
+const DOG_VOICE_URL = 'https://assets.mixkit.co/active_storage/sfx/1/1-preview.mp3';
+
+type BreedMediaOverride = Partial<Pick<Breed, 'imageUrl' | 'gallery' | 'voiceUrl'>>;
+
+const BREED_MEDIA_OVERRIDES: Record<string, BreedMediaOverride> = {
+  ragdoll: {
+    imageUrl: 'https://cdn2.thecatapi.com/images/y0wAin0Ei.jpg',
+    gallery: [
+      'https://cdn2.thecatapi.com/images/y0wAin0Ei.jpg',
+      'https://cdn2.thecatapi.com/images/nK0RaZbq3.jpg',
+      'https://cdn2.thecatapi.com/images/Sy9SgPE0B.jpg',
+    ],
+    voiceUrl: CAT_VOICE_URL,
+  },
+  'british-shorthair': {
+    imageUrl: 'https://cdn2.thecatapi.com/images/GrPErz7EA.jpg',
+    gallery: [
+      'https://cdn2.thecatapi.com/images/GrPErz7EA.jpg',
+      'https://cdn2.thecatapi.com/images/1bFFj7N5c.jpg',
+      'https://cdn2.thecatapi.com/images/xNuSF5YWY.jpg',
+    ],
+    voiceUrl: CAT_VOICE_URL,
+  },
+  'golden-retriever': {
+    imageUrl: 'https://images.dog.ceo/breeds/retriever-golden/n02099601_1028.jpg',
+    gallery: [
+      'https://images.dog.ceo/breeds/retriever-golden/n02099601_1028.jpg',
+      'https://images.dog.ceo/breeds/retriever-golden/joey_20210805_130226.jpg',
+      'https://images.dog.ceo/breeds/retriever-golden/n02099601_6814.jpg',
+    ],
+    voiceUrl: DOG_VOICE_URL,
+  },
+  corgi: {
+    imageUrl: 'https://images.dog.ceo/breeds/corgi-cardigan/n02113186_6415.jpg',
+    gallery: [
+      'https://images.dog.ceo/breeds/corgi-cardigan/n02113186_6415.jpg',
+      'https://images.dog.ceo/breeds/corgi-cardigan/n02113186_3169.jpg',
+      'https://images.dog.ceo/breeds/corgi-cardigan/n02113186_5242.jpg',
+    ],
+    voiceUrl: DOG_VOICE_URL,
+  },
+  husky: {
+    imageUrl: 'https://images.dog.ceo/breeds/husky/n02110185_12498.jpg',
+    gallery: [
+      'https://images.dog.ceo/breeds/husky/n02110185_12498.jpg',
+      'https://images.dog.ceo/breeds/husky/n02110185_1164.jpg',
+      'https://images.dog.ceo/breeds/husky/n02110185_8154.jpg',
+    ],
+    voiceUrl: DOG_VOICE_URL,
+  },
+  siamese: {
+    imageUrl: 'https://cdn2.thecatapi.com/images/__tqyLW91.jpg',
+    gallery: [
+      'https://cdn2.thecatapi.com/images/__tqyLW91.jpg',
+      'https://cdn2.thecatapi.com/images/DFHMMPNcD.jpg',
+      'https://cdn2.thecatapi.com/images/kjKxmn3Ob.jpg',
+    ],
+    voiceUrl: CAT_VOICE_URL,
+  },
+  labrador: {
+    imageUrl: 'https://images.dog.ceo/breeds/labrador/n02099712_7411.jpg',
+    gallery: [
+      'https://images.dog.ceo/breeds/labrador/n02099712_7411.jpg',
+      'https://images.dog.ceo/breeds/labrador/n02099712_3273.jpg',
+      'https://images.dog.ceo/breeds/labrador/n02099712_7968.jpg',
+    ],
+    voiceUrl: DOG_VOICE_URL,
+  },
+  'scottish-fold': {
+    imageUrl: 'https://cdn2.thecatapi.com/images/hd-zs3918.jpg',
+    gallery: [
+      'https://cdn2.thecatapi.com/images/hd-zs3918.jpg',
+      'https://cdn2.thecatapi.com/images/IOqJ6RK7L.jpg',
+      'https://cdn2.thecatapi.com/images/OlCMYSMZD.jpg',
+    ],
+    voiceUrl: CAT_VOICE_URL,
+  },
+  persian: {
+    imageUrl: 'https://cdn2.thecatapi.com/images/d_RzH-Zft.jpg',
+    gallery: [
+      'https://cdn2.thecatapi.com/images/d_RzH-Zft.jpg',
+      'https://cdn2.thecatapi.com/images/-Zfz5z2jK.jpg',
+      'https://cdn2.thecatapi.com/images/e7-hS3gey.jpg',
+    ],
+    voiceUrl: CAT_VOICE_URL,
+  },
+  samoyed: {
+    imageUrl: 'https://images.dog.ceo/breeds/samoyed/n02111889_1714.jpg',
+    gallery: [
+      'https://images.dog.ceo/breeds/samoyed/n02111889_1714.jpg',
+      'https://images.dog.ceo/breeds/samoyed/n02111889_1264.jpg',
+      'https://images.dog.ceo/breeds/samoyed/n02111889_8240.jpg',
+    ],
+    voiceUrl: DOG_VOICE_URL,
+  },
+  shiba: {
+    imageUrl: 'https://images.dog.ceo/breeds/shiba/mamehiko01.jpg',
+    gallery: [
+      'https://images.dog.ceo/breeds/shiba/mamehiko01.jpg',
+      'https://images.dog.ceo/breeds/shiba/shiba-18.jpg',
+      'https://images.dog.ceo/breeds/shiba/kurosuke01.jpg',
+    ],
+    voiceUrl: DOG_VOICE_URL,
+  },
+  'maine-coon': {
+    imageUrl: 'https://cdn2.thecatapi.com/images/MmiojCuKC.jpg',
+    gallery: [
+      'https://cdn2.thecatapi.com/images/MmiojCuKC.jpg',
+      'https://cdn2.thecatapi.com/images/HD4lZB6BI.jpg',
+      'https://cdn2.thecatapi.com/images/MtgMsxPw9.jpg',
+    ],
+    voiceUrl: CAT_VOICE_URL,
+  },
+  bengal: {
+    imageUrl: 'https://cdn2.thecatapi.com/images/8pCFG7gCV.jpg',
+    gallery: [
+      'https://cdn2.thecatapi.com/images/8pCFG7gCV.jpg',
+      'https://cdn2.thecatapi.com/images/VZ3qFLIe3.jpg',
+      'https://cdn2.thecatapi.com/images/iWyIaja-G.jpg',
+    ],
+    voiceUrl: CAT_VOICE_URL,
+  },
+  sphynx: {
+    imageUrl: 'https://cdn2.thecatapi.com/images/Y_z-aBHvf.jpg',
+    gallery: [
+      'https://cdn2.thecatapi.com/images/Y_z-aBHvf.jpg',
+      'https://cdn2.thecatapi.com/images/HBWdtLpif.jpg',
+      'https://cdn2.thecatapi.com/images/J-vpF8e1N.jpg',
+    ],
+    voiceUrl: CAT_VOICE_URL,
+  },
+  'russian-blue': {
+    imageUrl: 'https://cdn2.thecatapi.com/images/DdmsQrCAv.jpg',
+    gallery: [
+      'https://cdn2.thecatapi.com/images/DdmsQrCAv.jpg',
+      'https://cdn2.thecatapi.com/images/xZysIjSqa.jpg',
+      'https://cdn2.thecatapi.com/images/kmvetZsyr.jpg',
+    ],
+    voiceUrl: CAT_VOICE_URL,
+  },
+  'german-shepherd': {
+    imageUrl: 'https://images.dog.ceo/breeds/german-shepherd/n02106662_7960.jpg',
+    gallery: [
+      'https://images.dog.ceo/breeds/german-shepherd/n02106662_7960.jpg',
+      'https://images.dog.ceo/breeds/german-shepherd/n02106662_22245.jpg',
+      'https://images.dog.ceo/breeds/german-shepherd/n02106662_9226.jpg',
+    ],
+    voiceUrl: DOG_VOICE_URL,
+  },
+  poodle: {
+    imageUrl: 'https://images.dog.ceo/breeds/poodle-standard/n02113799_5009.jpg',
+    gallery: [
+      'https://images.dog.ceo/breeds/poodle-standard/n02113799_5009.jpg',
+      'https://images.dog.ceo/breeds/poodle-standard/n02113799_3054.jpg',
+      'https://images.dog.ceo/breeds/poodle-standard/n02113799_1864.jpg',
+    ],
+    voiceUrl: DOG_VOICE_URL,
+  },
+  'corgi-cardigan': {
+    imageUrl: 'https://images.dog.ceo/breeds/corgi-cardigan/n02113186_6415.jpg',
+    gallery: [
+      'https://images.dog.ceo/breeds/corgi-cardigan/n02113186_6415.jpg',
+      'https://images.dog.ceo/breeds/corgi-cardigan/n02113186_3169.jpg',
+      'https://images.dog.ceo/breeds/corgi-cardigan/n02113186_5242.jpg',
+    ],
+    voiceUrl: DOG_VOICE_URL,
+  },
+  'border-collie': {
+    imageUrl: 'https://images.dog.ceo/breeds/collie-border/n02106166_1429.jpg',
+    gallery: [
+      'https://images.dog.ceo/breeds/collie-border/n02106166_1429.jpg',
+      'https://images.dog.ceo/breeds/collie-border/n02106166_402.jpg',
+      'https://images.dog.ceo/breeds/collie-border/n02106166_416.jpg',
+    ],
+    voiceUrl: DOG_VOICE_URL,
+  },
+  'bichon-frise': {
+    imageUrl: 'https://images.dog.ceo/breeds/frise-bichon/jh-ezio-1.jpg',
+    gallery: [
+      'https://images.dog.ceo/breeds/frise-bichon/jh-ezio-1.jpg',
+      'https://images.dog.ceo/breeds/frise-bichon/jh-ezio-2.jpg',
+      'https://images.dog.ceo/breeds/frise-bichon/jh-ezio-3.jpg',
+    ],
+    voiceUrl: DOG_VOICE_URL,
+  },
+  'husky-alaskan': {
+    imageUrl: 'https://images.dog.ceo/breeds/malamute/n02110063_4432.jpg',
+    gallery: [
+      'https://images.dog.ceo/breeds/malamute/n02110063_4432.jpg',
+      'https://images.dog.ceo/breeds/malamute/n02110063_8977.jpg',
+      'https://images.dog.ceo/breeds/malamute/n02110063_17962.jpg',
+    ],
+    voiceUrl: DOG_VOICE_URL,
+  },
+  ragdoll2: {
+    imageUrl: 'https://cdn2.thecatapi.com/images/SCHe-SekW.jpg',
+    gallery: [
+      'https://cdn2.thecatapi.com/images/SCHe-SekW.jpg',
+      'https://cdn2.thecatapi.com/images/8NdgktL3E.jpg',
+      'https://cdn2.thecatapi.com/images/MuEGe1-Sz.jpg',
+    ],
+    voiceUrl: CAT_VOICE_URL,
+  },
+  abyssinian: {
+    imageUrl: 'https://cdn2.thecatapi.com/images/xnzzM6MBI.jpg',
+    gallery: [
+      'https://cdn2.thecatapi.com/images/xnzzM6MBI.jpg',
+      'https://cdn2.thecatapi.com/images/unPP08xOZ.jpg',
+      'https://cdn2.thecatapi.com/images/N-94oSJ5T.jpg',
+    ],
+    voiceUrl: CAT_VOICE_URL,
+  },
+  burmese: {
+    imageUrl: 'https://cdn2.thecatapi.com/images/92D9NZLs0.jpg',
+    gallery: [
+      'https://cdn2.thecatapi.com/images/92D9NZLs0.jpg',
+      'https://cdn2.thecatapi.com/images/4lXnnfxac.jpg',
+      'https://cdn2.thecatapi.com/images/hj7Oh-SRY.jpg',
+    ],
+    voiceUrl: CAT_VOICE_URL,
+  },
+  pomeranian: {
+    imageUrl: 'https://images.dog.ceo/breeds/pomeranian/n02112018_1518.jpg',
+    gallery: [
+      'https://images.dog.ceo/breeds/pomeranian/n02112018_1518.jpg',
+      'https://images.dog.ceo/breeds/pomeranian/pomeranian_black_07.jpg',
+      'https://images.dog.ceo/breeds/pomeranian/n02112018_5554.jpg',
+    ],
+    voiceUrl: DOG_VOICE_URL,
+  },
+  chihuahua: {
+    imageUrl: 'https://images.dog.ceo/breeds/chihuahua/n02085620_4700.jpg',
+    gallery: [
+      'https://images.dog.ceo/breeds/chihuahua/n02085620_4700.jpg',
+      'https://images.dog.ceo/breeds/chihuahua/flora.jpg',
+      'https://images.dog.ceo/breeds/chihuahua/n02085620_712.jpg',
+    ],
+    voiceUrl: DOG_VOICE_URL,
+  },
+  dachshund: {
+    imageUrl: 'https://images.dog.ceo/breeds/dachshund/Stretched_Dachshund.jpg',
+    gallery: [
+      'https://images.dog.ceo/breeds/dachshund/Stretched_Dachshund.jpg',
+      'https://images.dog.ceo/breeds/dachshund/dachshund-3.jpg',
+      'https://images.dog.ceo/breeds/dachshund/reese.jpg',
+    ],
+    voiceUrl: DOG_VOICE_URL,
+  },
+  'shih-tzu': {
+    imageUrl: 'https://images.dog.ceo/breeds/shihtzu/n02086240_4127.jpg',
+    gallery: [
+      'https://images.dog.ceo/breeds/shihtzu/n02086240_4127.jpg',
+      'https://images.dog.ceo/breeds/shihtzu/n02086240_4669.jpg',
+      'https://images.dog.ceo/breeds/shihtzu/n02086240_3489.jpg',
+    ],
+    voiceUrl: DOG_VOICE_URL,
+  },
+  'yorkshire-terrier': {
+    imageUrl: 'https://images.dog.ceo/breeds/terrier-yorkshire/n02094433_478.jpg',
+    gallery: [
+      'https://images.dog.ceo/breeds/terrier-yorkshire/n02094433_478.jpg',
+      'https://images.dog.ceo/breeds/terrier-yorkshire/n02094433_1483.jpg',
+      'https://images.dog.ceo/breeds/terrier-yorkshire/n02094433_889.jpg',
+    ],
+    voiceUrl: DOG_VOICE_URL,
+  },
+  chinchilla: {
+    imageUrl: 'https://cdn2.thecatapi.com/images/d_RzH-Zft.jpg',
+    gallery: [
+      'https://cdn2.thecatapi.com/images/d_RzH-Zft.jpg',
+      'https://cdn2.thecatapi.com/images/AYfFc4vOB.jpg',
+      'https://cdn2.thecatapi.com/images/yCd1pVi7Y.jpg',
+    ],
+    voiceUrl: CAT_VOICE_URL,
+  },
+  bombay: {
+    imageUrl: 'https://cdn2.thecatapi.com/images/BkksyH95Z.jpg',
+    gallery: [
+      'https://cdn2.thecatapi.com/images/BkksyH95Z.jpg',
+      'https://cdn2.thecatapi.com/images/5iYq9NmT1.jpg',
+      'https://cdn2.thecatapi.com/images/Bc0CMLOjz.jpg',
+    ],
+    voiceUrl: CAT_VOICE_URL,
+  },
+  'exotic-shorthair': {
+    imageUrl: 'https://cdn2.thecatapi.com/images/YnPrYEmfe.jpg',
+    gallery: [
+      'https://cdn2.thecatapi.com/images/YnPrYEmfe.jpg',
+      'https://cdn2.thecatapi.com/images/cw18Op1Ok.jpg',
+      'https://cdn2.thecatapi.com/images/khyg1KLOZ.jpg',
+    ],
+    voiceUrl: CAT_VOICE_URL,
+  },
+  birman: {
+    imageUrl: 'https://cdn2.thecatapi.com/images/OhTkBTPnD.jpg',
+    gallery: [
+      'https://cdn2.thecatapi.com/images/OhTkBTPnD.jpg',
+      'https://cdn2.thecatapi.com/images/TzyZJUeIM.jpg',
+      'https://cdn2.thecatapi.com/images/xRMeDCybn.jpg',
+    ],
+    voiceUrl: CAT_VOICE_URL,
+  },
+  'norwegian-forest': {
+    imageUrl: 'https://cdn2.thecatapi.com/images/wLFWzKgkf.jpg',
+    gallery: [
+      'https://cdn2.thecatapi.com/images/wLFWzKgkf.jpg',
+      'https://cdn2.thecatapi.com/images/JqnhXlI_b.jpg',
+      'https://cdn2.thecatapi.com/images/wJyw82pIl.jpg',
+    ],
+    voiceUrl: CAT_VOICE_URL,
+  },
+  'french-bulldog': {
+    imageUrl: 'https://images.dog.ceo/breeds/bulldog-french/vite.jpg',
+    gallery: [
+      'https://images.dog.ceo/breeds/bulldog-french/vite.jpg',
+      'https://images.dog.ceo/breeds/bulldog-french/n02108915_10204.jpg',
+      'https://images.dog.ceo/breeds/bulldog-french/n02108915_759.jpg',
+    ],
+    voiceUrl: DOG_VOICE_URL,
+  },
+  maltese: {
+    imageUrl: 'https://images.dog.ceo/breeds/maltese/n02085936_8767.jpg',
+    gallery: [
+      'https://images.dog.ceo/breeds/maltese/n02085936_8767.jpg',
+      'https://images.dog.ceo/breeds/maltese/n02085936_20610.jpg',
+      'https://images.dog.ceo/breeds/maltese/n02085936_16188.jpg',
+    ],
+    voiceUrl: DOG_VOICE_URL,
+  },
+  'great-dane': {
+    imageUrl: 'https://images.dog.ceo/breeds/dane-great/n02109047_6042.jpg',
+    gallery: [
+      'https://images.dog.ceo/breeds/dane-great/n02109047_6042.jpg',
+      'https://images.dog.ceo/breeds/dane-great/n02109047_8090.jpg',
+      'https://images.dog.ceo/breeds/dane-great/n02109047_8912.jpg',
+    ],
+    voiceUrl: DOG_VOICE_URL,
+  },
+  akita: {
+    imageUrl: 'https://images.dog.ceo/breeds/akita/512px-Ainu-Dog.jpg',
+    gallery: [
+      'https://images.dog.ceo/breeds/akita/512px-Ainu-Dog.jpg',
+      'https://images.dog.ceo/breeds/akita/Akita_Inu_dog.jpg',
+      'https://images.dog.ceo/breeds/akita/512px-Akita_inu.jpg',
+    ],
+    voiceUrl: DOG_VOICE_URL,
+  },
+  bernese: {
+    imageUrl: 'https://images.dog.ceo/breeds/mountain-bernese/n02107683_4411.jpg',
+    gallery: [
+      'https://images.dog.ceo/breeds/mountain-bernese/n02107683_4411.jpg',
+      'https://images.dog.ceo/breeds/mountain-bernese/n02107683_3140.jpg',
+      'https://images.dog.ceo/breeds/mountain-bernese/n02107683_1958.jpg',
+    ],
+    voiceUrl: DOG_VOICE_URL,
+  },
+};
 
 function buildGallery(breed: Breed): string[] {
   const pool = breed.species === 'cat' ? CAT_GALLERY_POOL : DOG_GALLERY_POOL;
@@ -1711,6 +2070,9 @@ const breedRecords: Breed[] = [
 ];
 
 export const breeds: Breed[] = breedRecords.map((breed) => ({
+  ...breed,
+  ...BREED_MEDIA_OVERRIDES[breed.id],
+})).map((breed) => ({
   ...breed,
   gallery: breed.gallery?.length ? breed.gallery : buildGallery(breed),
 }));
