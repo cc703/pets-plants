@@ -32,9 +32,17 @@ yarn-error.*
 
 # local env files
 .env*.local
+server/.env
 
 # typescript
 *.tsbuildinfo
+
+# local verification artifacts
+.tmp-chrome-smoke/
+.tmp-chrome-ui-smoke/
+*.log
+chrome-home-dom.html
+server/uploads/
 
 # generated native folders
 /ios
