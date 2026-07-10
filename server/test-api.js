@@ -253,6 +253,11 @@ async function testAI() {
   });
   assert('POST /ai/chat 返回 200', status === 200);
   assert('返回回复内容', !!data.data?.reply);
+
+  const { status: knowledgeStatus, data: knowledgeData } = await request('GET', '/ai/knowledge');
+  assert('GET /ai/knowledge 返回 200', knowledgeStatus === 200);
+  assert('AI 今日知识返回文本', !!knowledgeData.data?.text);
+  assert('AI 今日知识来源为 DeepSeek', knowledgeData.data?.source === 'DeepSeek AI');
 }
 
 async function testMessages() {

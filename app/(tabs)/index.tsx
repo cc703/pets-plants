@@ -20,6 +20,7 @@ import { usePets } from '../../src/contexts/PetContext';
 import { getBreedById } from '../../src/data/breeds';
 import PetIllustration from '../../src/components/PetIllustration';
 import OptimizedImage from '../../src/components/OptimizedImage';
+import { aiService, type AIKnowledgeItem } from '../../src/services/aiService';
 
 // 今日知识数据
 const knowledgeItems = [
@@ -173,7 +174,10 @@ export default function HomePage() {
   const [pressedCard, setPressedCard] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [currentKnowledgeIndex, setCurrentKnowledgeIndex] = useState(0);
+  const [aiKnowledgeItems, setAiKnowledgeItems] = useState<AIKnowledgeItem[]>([]);
+  const [isKnowledgeLoading, setIsKnowledgeLoading] = useState(false);
   const knowledgeFadeAnim = useRef(new Animated.Value(1)).current;
+  const displayedKnowledgeItems = aiKnowledgeItems.length > 0 ? aiKnowledgeItems : knowledgeItems;
   const personaActions = [
     {
       icon: 'paw-outline' as const,
@@ -198,11 +202,28 @@ export default function HomePage() {
     },
   ];
 
+  const loadAIKnowledge = useCallback(async () => {
+    setIsKnowledgeLoading(true);
+    try {
+      const item = await aiService.getKnowledge();
+      setAiKnowledgeItems((prev) => [item, ...prev].slice(0, 8));
+      setCurrentKnowledgeIndex(0);
+    } catch (error) {
+      console.warn('Load AI knowledge failed:', error);
+    } finally {
+      setIsKnowledgeLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAIKnowledge();
+  }, [loadAIKnowledge]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await loadAIKnowledge();
     setRefreshing(false);
-  }, []);
+  }, [loadAIKnowledge]);
 
   // 切换今日知识
   const switchKnowledge = useCallback(() => {
@@ -211,14 +232,20 @@ export default function HomePage() {
       duration: 150,
       useNativeDriver: Platform.OS !== 'web',
     }).start(() => {
-      setCurrentKnowledgeIndex(prev => (prev + 1) % knowledgeItems.length);
+      setCurrentKnowledgeIndex(prev => {
+        const nextIndex = (prev + 1) % displayedKnowledgeItems.length;
+        if (nextIndex === 0 && !isKnowledgeLoading) {
+          loadAIKnowledge();
+        }
+        return nextIndex;
+      });
       Animated.timing(knowledgeFadeAnim, {
         toValue: 1,
         duration: 150,
         useNativeDriver: Platform.OS !== 'web',
       }).start();
     });
-  }, [knowledgeFadeAnim]);
+  }, [displayedKnowledgeItems.length, isKnowledgeLoading, knowledgeFadeAnim, loadAIKnowledge]);
 
   // 头部视差动画
   const headerTranslateY = scrollY.interpolate({
@@ -426,7 +453,7 @@ export default function HomePage() {
             </View>
             <TouchableOpacity onPress={switchKnowledge} style={styles.switchBtn}>
               <Ionicons name="refresh" size={14} color={Colors.secondary} />
-              <Text style={styles.switchText}>换一换</Text>
+              <Text style={styles.switchText}>{isKnowledgeLoading ? '生成中' : '换一换'}</Text>
             </TouchableOpacity>
           </View>
           <TouchableOpacity activeOpacity={0.85} onPress={switchKnowledge}>
@@ -439,18 +466,18 @@ export default function HomePage() {
               <Animated.View style={{ opacity: knowledgeFadeAnim }}>
                 <View style={styles.knowledgeHeader}>
                   <View style={styles.knowledgeIconWrap}>
-                    <Ionicons name={knowledgeItems[currentKnowledgeIndex].icon} size={18} color={Colors.secondary} />
+                    <Ionicons name={displayedKnowledgeItems[currentKnowledgeIndex].icon} size={18} color={Colors.secondary} />
                   </View>
-                  <Text style={styles.knowledgeTitle}>{knowledgeItems[currentKnowledgeIndex].title}</Text>
+                  <Text style={styles.knowledgeTitle}>{displayedKnowledgeItems[currentKnowledgeIndex].title}</Text>
                   <View style={styles.knowledgeBadge}>
-                    <Text style={styles.knowledgeBadgeText}>{currentKnowledgeIndex + 1}/{knowledgeItems.length}</Text>
+                    <Text style={styles.knowledgeBadgeText}>{currentKnowledgeIndex + 1}/{displayedKnowledgeItems.length}</Text>
                   </View>
                 </View>
                 <Text style={styles.knowledgeText}>
-                  {knowledgeItems[currentKnowledgeIndex].text}
+                  {displayedKnowledgeItems[currentKnowledgeIndex].text}
                 </Text>
                 <View style={styles.knowledgeFooter}>
-                  <Text style={styles.knowledgeSource}>来源：{knowledgeItems[currentKnowledgeIndex].source}</Text>
+                  <Text style={styles.knowledgeSource}>来源：{displayedKnowledgeItems[currentKnowledgeIndex].source}</Text>
                   <View style={styles.knowledgeArrow}>
                     <Ionicons name="arrow-forward" size={14} color={Colors.secondary} />
                   </View>
