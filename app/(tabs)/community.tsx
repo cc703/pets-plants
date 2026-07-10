@@ -13,6 +13,8 @@ import {
   TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
+  Image,
+  ImageBackground,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -46,7 +48,7 @@ const circleIcons: Record<string, keyof typeof Ionicons.glyphMap> = {
 
 export default function CommunityPage() {
   const router = useRouter();
-  const { status } = useAuth();
+  const { status, user } = useAuth();
   const [activeTab, setActiveTab] = useState<'hot' | 'latest'>('hot');
   const [selectedCircle, setSelectedCircle] = useState<string | null>(null);
   const didFocusOnceRef = useRef(false);
@@ -177,24 +179,59 @@ export default function CommunityPage() {
 
   const renderHeader = () => (
     <View>
-      <View style={styles.momentsHero}>
-        <View style={styles.heroTextWrap}>
-          <Text style={styles.heroEyebrow}>好友动态</Text>
-          <Text style={styles.heroTitle}>看看大家今天和毛孩子发生了什么</Text>
-          <Text style={styles.heroSubtitle}>像朋友圈一样浏览近况、照片和养宠经验。</Text>
+      <ImageBackground
+        source={require('../../assets/splash/community-friendship.png')}
+        style={styles.cover}
+        imageStyle={styles.coverImage}
+      >
+        <View style={styles.coverShade} />
+        <View style={styles.coverTopBar}>
+          <TouchableOpacity
+            style={styles.coverIconBtn}
+            onPress={() => router.push('/(tabs)/notification')}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="打开通知"
+          >
+            <Ionicons name="notifications" size={20} color={Colors.surface} />
+          </TouchableOpacity>
+          <View style={styles.coverActions}>
+            <TouchableOpacity
+              style={styles.coverIconBtn}
+              onPress={() => router.push('/(tabs)/wiki')}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="打开品种百科"
+            >
+              <Ionicons name="book" size={20} color={Colors.surface} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="community-create-post-btn"
+              style={styles.coverIconBtn}
+              onPress={handleCreatePost}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="发布动态"
+            >
+              <Ionicons name="camera" size={22} color={Colors.surface} />
+            </TouchableOpacity>
+          </View>
         </View>
-        <TouchableOpacity
-          testID="community-create-post-hero-btn"
-          style={styles.heroPostBtn}
-          onPress={handleCreatePost}
-          activeOpacity={0.85}
-          accessibilityRole="button"
-          accessibilityLabel="发布宠物动态"
-        >
-          <Ionicons name="camera" size={17} color={Colors.surface} />
-          <Text style={styles.heroPostText}>发布动态</Text>
-        </TouchableOpacity>
-      </View>
+
+        <View style={styles.profileOverlay}>
+          <View style={styles.coverTitleWrap}>
+            <Text style={styles.coverTitle}>萌宠朋友圈</Text>
+            <Text style={styles.coverSubtitle}>记录和毛孩子一起的日常</Text>
+          </View>
+          <View style={styles.profileAvatar}>
+            {user?.avatarUrl ? (
+              <Image source={{ uri: user.avatarUrl }} style={styles.profileAvatarImage} />
+            ) : (
+              <Text style={styles.profileAvatarText}>{user?.nickname?.trim().slice(0, 1) || '宠'}</Text>
+            )}
+          </View>
+        </View>
+      </ImageBackground>
 
       {/* 品种圈子 */}
       <View style={styles.circleStrip}>
@@ -262,7 +299,7 @@ export default function CommunityPage() {
       <View style={styles.feedToolbar}>
         <View>
           <Text style={styles.feedTitle}>宠友动态</Text>
-          <Text style={styles.feedSubtitle}>{selectedCircle ? '已按圈子筛选' : '全部圈子正在显示'}</Text>
+          <Text style={styles.feedSubtitle}>{selectedCircle ? '当前只看这个圈子' : '来自全部圈子的近况'}</Text>
         </View>
         <View style={styles.tabRow}>
           <TouchableOpacity
@@ -346,31 +383,6 @@ export default function CommunityPage() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <Text style={styles.title}>社区广场</Text>
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            style={styles.wikiBtn}
-            onPress={() => router.push('/(tabs)/wiki')}
-            activeOpacity={0.8}
-            accessibilityRole="button"
-            accessibilityLabel="打开品种百科"
-          >
-            <Ionicons name="book" size={16} color={Colors.primary} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            testID="community-create-post-btn"
-            style={styles.postBtn}
-            onPress={handleCreatePost}
-            activeOpacity={0.8}
-            accessibilityRole="button"
-            accessibilityLabel="发布动态"
-          >
-            <Ionicons name="add" size={20} color={Colors.surface} />
-          </TouchableOpacity>
-        </View>
-      </View>
-
       <FlatList
         data={posts}
         keyExtractor={(item) => item.id}
@@ -414,97 +426,95 @@ export default function CommunityPage() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.xl,
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.md,
-  },
-  title: {
-    fontSize: FontSize.xxl,
-    fontWeight: '700',
-    color: Colors.text,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  wikiBtn: {
-    height: 36,
-    width: 36,
-    borderRadius: 18,
     backgroundColor: Colors.surface,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Shadows.sm,
-  },
-  postBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    ...Shadows.sm,
   },
   content: {
     paddingBottom: 100,
   },
-  momentsHero: {
-    marginHorizontal: Spacing.xl,
-    marginTop: Spacing.sm,
-    borderRadius: BorderRadius.lg,
-    backgroundColor: Colors.surface,
-    padding: Spacing.lg,
+  cover: {
+    height: 310,
+    justifyContent: 'space-between',
+    backgroundColor: '#DDEFE8',
+  },
+  coverImage: {
+    resizeMode: 'cover',
+  },
+  coverShade: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(0, 0, 0, 0.14)',
+  },
+  coverTopBar: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.md,
+  },
+  coverActions: {
+    flexDirection: 'row',
     gap: Spacing.md,
+  },
+  coverIconBtn: {
+    width: 38,
+    height: 38,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profileOverlay: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'flex-end',
+    paddingHorizontal: Spacing.xl,
+    marginBottom: -30,
+    gap: Spacing.md,
+  },
+  coverTitleWrap: {
+    alignItems: 'flex-end',
+    marginBottom: 10,
+  },
+  coverTitle: {
+    color: Colors.surface,
+    fontSize: FontSize.xxl,
+    fontWeight: '800',
+    textShadowColor: 'rgba(0, 0, 0, 0.28)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  coverSubtitle: {
+    color: 'rgba(255, 255, 255, 0.92)',
+    fontSize: FontSize.sm,
+    marginTop: 4,
+    textShadowColor: 'rgba(0, 0, 0, 0.26)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  profileAvatar: {
+    width: 72,
+    height: 72,
+    borderRadius: 10,
+    backgroundColor: Colors.surface,
+    borderWidth: 3,
+    borderColor: Colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
     ...Shadows.md,
   },
-  heroTextWrap: {
-    flex: 1,
+  profileAvatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 7,
   },
-  heroEyebrow: {
-    fontSize: FontSize.xs,
+  profileAvatarText: {
     color: Colors.primaryDark,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  heroTitle: {
-    fontSize: FontSize.lg,
-    color: Colors.text,
+    fontSize: FontSize.title,
     fontWeight: '800',
-    lineHeight: 23,
-  },
-  heroSubtitle: {
-    fontSize: FontSize.xs,
-    color: Colors.textSecondary,
-    marginTop: 6,
-    lineHeight: 17,
-  },
-  heroPostBtn: {
-    minHeight: 40,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.primary,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.md,
-    gap: 5,
-  },
-  heroPostText: {
-    fontSize: FontSize.xs,
-    color: Colors.surface,
-    fontWeight: '700',
   },
   circleStrip: {
-    marginTop: Spacing.lg,
+    marginTop: 46,
     paddingHorizontal: Spacing.xl,
+    paddingBottom: Spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -523,28 +533,26 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   circleCard: {
-    width: 78,
+    minWidth: 76,
+    flexDirection: 'row',
     alignItems: 'center',
-    marginRight: Spacing.md,
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.md,
+    marginRight: Spacing.sm,
+    backgroundColor: '#F6F7F8',
+    borderRadius: BorderRadius.full,
+    paddingVertical: Spacing.xs,
     paddingHorizontal: Spacing.sm,
-    ...Shadows.sm,
   },
   circleCardActive: {
-    backgroundColor: Colors.primary + '0F',
-    borderWidth: 1.5,
-    borderColor: Colors.primary,
+    backgroundColor: Colors.primary + '18',
   },
   circleIcon: {
-    width: 34,
-    height: 34,
+    width: 24,
+    height: 24,
     borderRadius: 12,
-    backgroundColor: Colors.primary + '12',
+    backgroundColor: Colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: Spacing.sm,
+    marginRight: 6,
   },
   circleIconActive: {
     backgroundColor: Colors.primary,
@@ -555,6 +563,7 @@ const styles = StyleSheet.create({
     color: Colors.text,
   },
   circleCount: {
+    display: 'none',
     fontSize: FontSize.xs,
     color: Colors.textSecondary,
     marginTop: 2,
@@ -564,8 +573,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: Spacing.xl,
-    marginTop: Spacing.lg,
-    marginBottom: Spacing.sm,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border,
   },
   feedTitle: {
     fontSize: FontSize.lg,

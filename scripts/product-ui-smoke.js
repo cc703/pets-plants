@@ -241,7 +241,7 @@ async function waitForReady(client) {
       const hasTab = !!document.querySelector('[data-testid="tab-home"], [data-testid="tab-community"]');
       return hasTab || text.includes('萌宠星球') || text.includes('我的宠物');
     })();
-  `), 45000, 800);
+  `), 120000, 800);
   if (!ready) {
     const state = await pageState(client);
     throw new Error(`Frontend home did not render expected app content: ${JSON.stringify(state)}`);

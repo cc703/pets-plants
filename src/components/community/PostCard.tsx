@@ -15,7 +15,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Spacing, BorderRadius, FontSize, Shadows } from '../../utils/theme';
+import { Colors, Spacing, BorderRadius, FontSize } from '../../utils/theme';
 import ImageGrid from './ImageGrid';
 import { formatTime } from '../../services/postService';
 import type { Post } from '../../types';
@@ -118,8 +118,6 @@ export default function PostCard({
                 <Text style={styles.userName}>{post.user.nickname}</Text>
               </TouchableOpacity>
               <View style={styles.metaRow}>
-                <Text style={styles.time}>{formatTime(post.createdAt)}</Text>
-                <View style={styles.metaDot} />
                 <Text style={styles.metaText}>Lv.{post.user.level}</Text>
               </View>
             </View>
@@ -129,8 +127,8 @@ export default function PostCard({
               accessibilityLabel="更多动态操作"
             >
               <Ionicons
-                name="ellipsis-horizontal"
-                size={17}
+                name="chevron-down"
+                size={16}
                 color={Colors.textLight}
               />
             </TouchableOpacity>
@@ -179,69 +177,72 @@ export default function PostCard({
           )}
 
           {/* 操作栏 */}
-          <View style={styles.actions}>
-            <TouchableOpacity
-              testID={`post-${post.id}-like-btn`}
-              style={styles.actionBtn}
-              onPress={handleLike}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel={post.isLiked ? '取消点赞' : '点赞'}
-            >
-              <Animated.View style={{ transform: [{ scale: likeScale }] }}>
+          <View style={styles.footerRow}>
+            <Text style={styles.time}>{formatTime(post.createdAt)}</Text>
+            <View style={styles.actions}>
+              <TouchableOpacity
+                testID={`post-${post.id}-like-btn`}
+                style={styles.actionBtn}
+                onPress={handleLike}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={post.isLiked ? '取消点赞' : '点赞'}
+              >
+                <Animated.View style={{ transform: [{ scale: likeScale }] }}>
+                  <Ionicons
+                    name={post.isLiked ? 'heart' : 'heart-outline'}
+                    size={17}
+                    color={post.isLiked ? Colors.accent : Colors.textSecondary}
+                  />
+                </Animated.View>
+                <Text
+                  style={[styles.actionText, post.isLiked && styles.actionTextActive]}
+                >
+                  {post.likeCount > 0 ? post.likeCount : '赞'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                testID={`post-${post.id}-comment-btn`}
+                style={styles.actionBtn}
+                onPress={() => onComment?.(post)}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="评论"
+              >
                 <Ionicons
-                  name={post.isLiked ? 'heart' : 'heart-outline'}
-                  size={18}
-                  color={post.isLiked ? Colors.accent : Colors.textSecondary}
+                  name="chatbubble-outline"
+                  size={15}
+                  color={Colors.textSecondary}
                 />
-              </Animated.View>
-              <Text
-                style={[styles.actionText, post.isLiked && styles.actionTextActive]}
-              >
-                {post.likeCount > 0 ? post.likeCount : '赞'}
-              </Text>
-            </TouchableOpacity>
+                <Text style={styles.actionText}>
+                  {post.commentCount > 0 ? post.commentCount : '评论'}
+                </Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              testID={`post-${post.id}-comment-btn`}
-              style={styles.actionBtn}
-              onPress={() => onComment?.(post)}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="评论"
-            >
-              <Ionicons
-                name="chatbubble-outline"
-                size={16}
-                color={Colors.textSecondary}
-              />
-              <Text style={styles.actionText}>
-                {post.commentCount > 0 ? post.commentCount : '评论'}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              testID={`post-${post.id}-bookmark-btn`}
-              style={styles.actionBtn}
-              onPress={() => onBookmark?.(post)}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel={post.isBookmarked ? '取消收藏' : '收藏'}
-            >
-              <Ionicons
-                name={post.isBookmarked ? 'bookmark' : 'bookmark-outline'}
-                size={16}
-                color={post.isBookmarked ? Colors.secondary : Colors.textSecondary}
-              />
-              <Text
-                style={[
-                  styles.actionText,
-                  post.isBookmarked && { color: Colors.secondary },
-                ]}
+              <TouchableOpacity
+                testID={`post-${post.id}-bookmark-btn`}
+                style={styles.actionBtn}
+                onPress={() => onBookmark?.(post)}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={post.isBookmarked ? '取消收藏' : '收藏'}
               >
-                {post.bookmarkCount > 0 ? post.bookmarkCount : '收藏'}
-              </Text>
-            </TouchableOpacity>
+                <Ionicons
+                  name={post.isBookmarked ? 'bookmark' : 'bookmark-outline'}
+                  size={15}
+                  color={post.isBookmarked ? Colors.secondary : Colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.actionText,
+                    post.isBookmarked && { color: Colors.secondary },
+                  ]}
+                >
+                  {post.bookmarkCount > 0 ? post.bookmarkCount : '收藏'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </View>
@@ -252,13 +253,10 @@ export default function PostCard({
 const styles = StyleSheet.create({
   card: {
     backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.lg,
-    paddingHorizontal: Spacing.lg,
-    marginHorizontal: Spacing.xl,
-    marginBottom: Spacing.sm,
-    borderWidth: 1,
-    borderColor: Colors.border + '80',
+    paddingVertical: Spacing.xl,
+    paddingHorizontal: Spacing.xl,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border,
   },
   timelineRow: {
     flexDirection: 'row',
@@ -273,9 +271,9 @@ const styles = StyleSheet.create({
     marginRight: Spacing.md,
   },
   avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
+    width: 46,
+    height: 46,
+    borderRadius: 6,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -293,23 +291,16 @@ const styles = StyleSheet.create({
   userName: {
     fontSize: FontSize.md,
     fontWeight: '700',
-    color: Colors.primaryDark,
+    color: '#35518B',
   },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
     marginTop: 2,
   },
   time: {
-    fontSize: FontSize.xs,
-    color: Colors.textSecondary,
-  },
-  metaDot: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: Colors.textLight,
+    fontSize: FontSize.sm,
+    color: Colors.textLight,
   },
   metaText: {
     fontSize: FontSize.xs,
@@ -317,16 +308,16 @@ const styles = StyleSheet.create({
   },
   moreBtn: {
     width: 28,
-    height: 26,
+    height: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 8,
-    backgroundColor: Colors.background,
+    borderRadius: 12,
+    backgroundColor: '#F5F5F5',
   },
   content: {
-    fontSize: FontSize.md,
-    color: Colors.text,
-    lineHeight: 23,
+    fontSize: FontSize.lg,
+    color: '#202124',
+    lineHeight: 27,
   },
   expandText: {
     fontSize: FontSize.sm,
@@ -341,29 +332,37 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
   },
   tag: {
-    backgroundColor: Colors.background,
+    backgroundColor: '#F7F8FA',
     paddingHorizontal: Spacing.sm,
     paddingVertical: 3,
     borderRadius: BorderRadius.sm,
   },
   tagText: {
     fontSize: FontSize.xs,
-    color: Colors.primary,
+    color: '#35518B',
+  },
+  footerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: Spacing.md,
   },
   actions: {
     flexDirection: 'row',
-    justifyContent: 'flex-start',
-    marginTop: Spacing.sm,
-    gap: Spacing.lg,
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 7,
+    paddingHorizontal: Spacing.xs,
+    paddingVertical: 2,
+    gap: 2,
   },
   actionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    minHeight: 30,
-    paddingHorizontal: Spacing.sm,
-    borderRadius: BorderRadius.sm,
-    backgroundColor: Colors.background,
+    gap: 4,
+    minHeight: 26,
+    paddingHorizontal: Spacing.xs,
+    borderRadius: 6,
   },
   actionText: {
     fontSize: FontSize.sm,
