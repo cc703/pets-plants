@@ -7,7 +7,7 @@
 
 ## 1. 当前事实
 
-- 前端是 Expo Router / React Native Web 项目，开发启动脚本为 `npm.cmd run web`，当前缺少生产构建脚本。参考：`package.json:40`。
+- 前端是 Expo Router / React Native Web 项目，开发启动脚本为 `npm.cmd run web`，已补充生产构建脚本 `npm.cmd run build:web`。参考：`package.json`。
 - 已有基础验证脚本：`typecheck`、`test:server:smoke`、`db:summary`、`verify`。参考：`package.json:41`、`package.json:42`、`package.json:45`、`package.json:48`。
 - 后端是 Express 服务，入口为 `server/index.js`，生产端口由 `PORT` 环境变量决定。参考：`server/index.js:19`、`server/index.js:167`。
 - 后端通过 `server/.env` 读取配置，并连接 MySQL 连接池。参考：`server/index.js:5`、`server/index.js:28`。
@@ -38,7 +38,7 @@
 
 上线前必须完成，不能用本地 `.env` 直搬生产。
 
-- [ ] 新建 `server/.env.example`，只保留变量名和示例值，不写真实密钥。
+- [x] 新建 `server/.env.example`，只保留变量名和示例值，不写真实密钥。
 - [ ] 生产环境配置以下变量：
   - `PORT`
   - `DB_HOST`
@@ -98,7 +98,7 @@
   - Nginx 将 `api.petplanet.example.com` 转发到 Node `PORT`。
   - 只开放 80/443，不直接暴露 Node 端口。
 - [ ] 配置 HTTPS 证书。
-- [ ] 配置 CORS，只允许正式前端域名。
+- [x] 配置 CORS，只允许正式前端域名。
 - [ ] 配置上传目录持久化，或迁移到对象存储。
 
 验收标准：
@@ -110,7 +110,7 @@
 
 ## 6. 前端 Web 部署
 
-- [ ] 增加生产构建脚本，例如 `build:web`。
+- [x] 增加生产构建脚本，例如 `build:web`。
 - [ ] 使用生产 API 地址构建：
   - `EXPO_PUBLIC_API_BASE_URL=https://api...`
 - [ ] 生成静态 Web 产物。
@@ -232,12 +232,12 @@
 ### P0：上线前必须完成
 
 - [ ] 选定部署平台、域名、数据库。
-- [ ] 增加 `server/.env.example`。
+- [x] 增加 `server/.env.example`。
 - [ ] 轮换密钥。
 - [ ] 配置生产 MySQL。
 - [ ] 配置后端进程守护。
 - [ ] 配置 HTTPS 和反向代理。
-- [ ] 增加前端生产构建脚本。
+- [x] 增加前端生产构建脚本。
 - [ ] 前端接线上 API。
 - [ ] 跑通 staging 验收。
 
