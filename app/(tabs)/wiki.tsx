@@ -119,9 +119,9 @@ export default function WikiPage() {
       },
       {
         icon: 'people-outline' as const,
-        title: '家庭陪伴',
-        desc: '孩子与老人友好',
-        filters: { suitableFor: ['有孩家庭', '老人陪伴'] },
+        title: '家养优选',
+        desc: '日常同住更友好',
+        filters: { suitableFor: ['公寓友好', '新手推荐', '有孩家庭', '老人陪伴'] },
       },
     ],
     []
