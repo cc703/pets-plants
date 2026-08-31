@@ -1,7 +1,9 @@
 const jwt = require('jsonwebtoken');
+const { loadRuntimeConfig } = require('../config/runtime');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'pet-planet-jwt-secret-key';
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'pet-planet-refresh-secret-key';
+const runtimeConfig = loadRuntimeConfig();
+const JWT_SECRET = runtimeConfig.jwtSecret;
+const JWT_REFRESH_SECRET = runtimeConfig.jwtRefreshSecret;
 const JWT_EXPIRES_IN = '2h';
 const JWT_REFRESH_EXPIRES_IN = '7d';
 

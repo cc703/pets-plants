@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   TextInput,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { safeBack } from '../../src/utils/nav';
@@ -25,6 +26,7 @@ import {
   type SortBy,
 } from '../../src/services/searchService';
 import type { Breed } from '../../src/types';
+import { fetchBreeds } from '../../src/services/breedService';
 
 export default function SearchResultPage() {
   const router = useRouter();
@@ -36,9 +38,26 @@ export default function SearchResultPage() {
   const [sortBy, setSortBy] = useState<SortBy>('popularity');
   const [showFilter, setShowFilter] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
+  const [breedList, setBreedList] = useState<Breed[]>([]);
+  const [loadStatus, setLoadStatus] = useState<'loading' | 'ready' | 'error'>('loading');
 
   const { history, addToHistory, clearHistory } = useSearchHistory();
   const searchInputRef = useRef<TextInput>(null);
+
+  const loadBreeds = useCallback(async () => {
+    setLoadStatus('loading');
+    try {
+      const data = await fetchBreeds({ page: 1, limit: 50 });
+      setBreedList(data);
+      setLoadStatus('ready');
+    } catch {
+      setLoadStatus('error');
+    }
+  }, []);
+
+  useEffect(() => {
+    loadBreeds();
+  }, [loadBreeds]);
 
   // 搜索结果
   const results = useMemo(
@@ -47,14 +66,15 @@ export default function SearchResultPage() {
         query: searchQuery,
         filters,
         sortBy,
+        source: breedList,
       }),
-    [searchQuery, filters, sortBy]
+    [searchQuery, filters, sortBy, breedList]
   );
 
   // 搜索建议（实时）
   const suggestions = useMemo(
-    () => (searchQuery.trim() && isFocused ? quickSearch(searchQuery, 5) : []),
-    [searchQuery, isFocused]
+    () => (searchQuery.trim() && isFocused ? quickSearch(searchQuery, 5, breedList) : []),
+    [searchQuery, isFocused, breedList]
   );
 
   const handleSubmitSearch = useCallback(() => {
@@ -310,7 +330,22 @@ export default function SearchResultPage() {
       </View>
 
       {/* 搜索建议 / 搜索结果 */}
-      {isFocused && !searchQuery.trim() ? (
+      {loadStatus === 'loading' ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="small" color={Colors.primary} />
+          <Text style={styles.loadingText}>正在加载百科数据...</Text>
+        </View>
+      ) : loadStatus === 'error' ? (
+        <View style={styles.emptyContainer}>
+          <View style={styles.emptyIconWrap}>
+            <Ionicons name="cloud-offline-outline" size={40} color={Colors.textLight} />
+          </View>
+          <Text style={styles.emptyTitle}>百科数据加载失败</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={loadBreeds}>
+            <Text style={styles.retryText}>重试</Text>
+          </TouchableOpacity>
+        </View>
+      ) : isFocused && !searchQuery.trim() ? (
         renderSuggestions()
       ) : isFocused && suggestions.length > 0 ? (
         renderSuggestions()
@@ -334,6 +369,7 @@ export default function SearchResultPage() {
       <SearchFilter
         visible={showFilter}
         filters={filters}
+        source={breedList}
         onConfirm={handleFilterConfirm}
         onReset={handleFilterReset}
         onClose={() => setShowFilter(false)}
@@ -347,6 +383,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
+  loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
+  loadingText: { fontSize: FontSize.sm, color: Colors.textSecondary },
+  retryBtn: { marginTop: Spacing.md, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, borderRadius: BorderRadius.md, backgroundColor: Colors.primary + '15' },
+  retryText: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: '600' },
   // 搜索栏
   searchBar: {
     flexDirection: 'row',

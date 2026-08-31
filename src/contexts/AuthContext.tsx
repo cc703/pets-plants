@@ -34,6 +34,7 @@ export interface AuthContextValue extends AuthState {
   login: (username: string, password: string) => Promise<void>;
   loginWithPhone: (phone: string, password: string) => Promise<void>;
   loginWithEmail: (email: string, password: string) => Promise<void>;
+  loginWithEmailCode: (email: string, code: string) => Promise<void>;
   loginWithSms: (phone: string, code: string) => Promise<void>;
   register: (params: RegisterParams) => Promise<void>;
   logout: () => Promise<void>;
@@ -183,6 +184,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [handleAuthResult]);
 
+  const loginWithEmailCode = useCallback(async (email: string, code: string) => {
+    dispatch({ type: 'AUTH_START' });
+    try {
+      const result = await authApi.loginWithEmailCode(email, code);
+      await handleAuthResult(result);
+    } catch (error: any) {
+      dispatch({ type: 'AUTH_FAILURE', payload: error.message || '登录失败' });
+    }
+  }, [handleAuthResult]);
+
   const loginWithSms = useCallback(async (phone: string, code: string) => {
     dispatch({ type: 'AUTH_START' });
     try {
@@ -286,6 +297,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     login,
     loginWithPhone,
     loginWithEmail,
+    loginWithEmailCode,
     loginWithSms,
     register,
     logout,

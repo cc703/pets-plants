@@ -26,6 +26,7 @@ async function run() {
     totalComments,
     totalBookmarks,
     totalCircles,
+    totalUserPets,
     uiUsers,
     latestUiUsers,
   ] = await Promise.all([
@@ -34,6 +35,7 @@ async function run() {
     scalar('SELECT COUNT(*) AS c FROM comments'),
     scalar('SELECT COUNT(*) AS c FROM bookmarks'),
     scalar('SELECT COUNT(*) AS c FROM circles'),
+    scalar('SELECT COUNT(*) AS c FROM user_pets'),
     scalar("SELECT COUNT(*) AS c FROM users WHERE username LIKE 'ui%'"),
     pool
       .query("SELECT username, nickname, created_at FROM users WHERE username LIKE 'ui%' ORDER BY created_at DESC LIMIT 5")
@@ -46,6 +48,10 @@ async function run() {
     requireColumn('refresh_tokens', 'expires_at'),
     requireColumn('email_reset_tokens', 'token_hash'),
     requireColumn('rate_limit_buckets', 'request_count'),
+    requireColumn('user_pets', 'user_id'),
+    requireColumn('user_pets', 'breed_id'),
+    requireColumn('user_pets', 'name'),
+    requireColumn('user_pets', 'is_primary'),
   ]);
 
   console.log(
@@ -57,6 +63,7 @@ async function run() {
           comments: totalComments,
           bookmarks: totalBookmarks,
           circles: totalCircles,
+          userPets: totalUserPets,
         },
         uiSmokeUsers: uiUsers,
         latestUiUsers,

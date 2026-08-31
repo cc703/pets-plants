@@ -10,7 +10,6 @@ import {
   Platform,
   KeyboardAvoidingView,
   Modal,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,7 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Speech from 'expo-speech';
 import { Colors, Spacing, BorderRadius, FontSize } from '../../src/utils/theme';
 import { aiService } from '../../src/services/aiService';
-import { useVoiceRecorder } from '../../src/hooks/useVoiceTools';
+import ComingSoonModal from '../../src/components/ComingSoonModal';
 import type { QuickAction } from '../../src/types';
 
 interface Message {
@@ -77,8 +76,14 @@ export default function AIPage() {
   const typingDot2 = useRef(new Animated.Value(0)).current;
   const typingDot3 = useRef(new Animated.Value(0)).current;
   const scrollViewRef = useRef<ScrollView>(null);
-  const { isRecording, lastRecordingUri, startRecording, stopRecording } = useVoiceRecorder();
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
+  const [comingSoonMessage, setComingSoonMessage] = useState<string | null>(null);
+  const [comingSoonTitle, setComingSoonTitle] = useState('功能开发中');
+
+  const openStatusModal = useCallback((message: string, title = '功能开发中') => {
+    setComingSoonTitle(title);
+    setComingSoonMessage(message);
+  }, []);
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: Platform.OS !== 'web' }).start();
@@ -140,22 +145,9 @@ export default function AIPage() {
     simulateAIResponse(msg);
   }, [inputText, simulateAIResponse]);
 
-  const handleVoiceInput = useCallback(async () => {
-    try {
-      if (isRecording) {
-        const uri = await stopRecording();
-        const voicePrompt = uri
-          ? `我刚录了一段语音咨询，请根据宠物养护场景给我建议。录音文件：${uri}`
-          : '我刚录了一段语音咨询，请根据宠物养护场景给我建议。';
-        setMessages((p) => [...p, { id: Date.now().toString(), text: '已发送一段语音咨询', isUser: true, timestamp: new Date() }]);
-        simulateAIResponse(voicePrompt);
-        return;
-      }
-      await startRecording();
-    } catch (error) {
-      Alert.alert('语音不可用', error instanceof Error ? error.message : '无法启动语音功能，请稍后再试');
-    }
-  }, [isRecording, simulateAIResponse, startRecording, stopRecording]);
+  const handleVoiceInput = useCallback(() => {
+    openStatusModal('语音问答功能正在开发中，敬请期待。');
+  }, [openStatusModal]);
 
   const speakMessage = useCallback(async (message: Message) => {
     if (message.isUser) return;
@@ -177,10 +169,10 @@ export default function AIPage() {
         onError: () => setSpeakingMessageId(null),
       });
     } catch {
-      Alert.alert('朗读失败', '当前设备暂时无法朗读这条回复');
+      openStatusModal('当前设备暂时无法朗读这条回复。', '朗读失败');
       setSpeakingMessageId(null);
     }
-  }, [speakingMessageId]);
+  }, [openStatusModal, speakingMessageId]);
 
   const handlePresetQuestion = useCallback((q: string) => {
     setMessages((p) => [...p, { id: Date.now().toString(), text: q, isUser: true, timestamp: new Date() }]);
@@ -189,17 +181,27 @@ export default function AIPage() {
   }, [simulateAIResponse]);
 
   const handleQuickAction = useCallback((label: string) => {
+    if (label === '拍照识别') {
+      openStatusModal('拍照识别功能正在开发中，敬请期待。');
+      return;
+    }
     const map: Record<string, string> = {
-      '拍照识别': '我想识别一下宠物品种', '品种推荐': '推荐适合我的宠物品种',
+      '品种推荐': '推荐适合我的宠物品种',
       '健康问答': '宠物健康问题咨询', '冷知识': '分享一些宠物冷知识',
     };
     handlePresetQuestion(map[label] || label);
-  }, [handlePresetQuestion]);
+  }, [handlePresetQuestion, openStatusModal]);
 
   const formatTime = (d: Date) => `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      <ComingSoonModal
+        visible={comingSoonMessage !== null}
+        title={comingSoonTitle}
+        message={comingSoonMessage || undefined}
+        onClose={() => setComingSoonMessage(null)}
+      />
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Text style={styles.title}>AI 顾问</Text>
@@ -214,7 +216,7 @@ export default function AIPage() {
         <ScrollView ref={scrollViewRef} contentContainerStyle={styles.chatContent} showsVerticalScrollIndicator={false} onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}>
           <Animated.View style={[styles.quickGrid, { opacity: fadeAnim }]}>
             {quickActions.map((action, index) => (
-              <TouchableOpacity key={index} style={styles.quickCard} activeOpacity={0.8} onPress={() => handleQuickAction(action.label)}>
+              <TouchableOpacity key={index} style={styles.quickCard} activeOpacity={0.8} onPress={() => handleQuickAction(action.label)} testID={`quick-action-${action.label}`}>
                 <LinearGradient colors={[action.bg + '15', action.bg + '05']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.quickIconWrap}>
                   <Ionicons name={action.icon as any} size={22} color={action.color} />
                 </LinearGradient>
@@ -226,7 +228,7 @@ export default function AIPage() {
           <View style={styles.safetyNotice}>
             <Ionicons name="shield-checkmark-outline" size={16} color={Colors.accent} />
             <Text style={styles.safetyNoticeText}>
-              健康、用药和急症问题请以执业兽医诊断为准，AI 建议仅供养宠参考。
+              紧急症状请优先就医；本页面不提供用药剂量或诊断，AI 建议仅供养宠参考。
             </Text>
           </View>
 
@@ -294,11 +296,12 @@ export default function AIPage() {
             <Ionicons name="list" size={20} color={Colors.primary} />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.voiceInputBtn, isRecording && styles.voiceInputBtnActive]}
+            style={styles.voiceInputBtn}
             onPress={handleVoiceInput}
             activeOpacity={0.75}
+            testID="voice-entry-btn"
           >
-            <Ionicons name={isRecording ? 'stop' : 'mic'} size={18} color={isRecording ? Colors.surface : Colors.secondary} />
+            <Ionicons name="mic" size={18} color={Colors.secondary} />
           </TouchableOpacity>
           <TextInput style={styles.textInput} value={inputText} onChangeText={setInputText} placeholder="请输入你的问题..." placeholderTextColor={Colors.textLight} multiline maxLength={500} />
           <TouchableOpacity style={[styles.sendBtn, !inputText.trim() && styles.sendBtnDisabled]} onPress={handleSend} activeOpacity={0.8} disabled={!inputText.trim() || isTyping}>
@@ -307,12 +310,6 @@ export default function AIPage() {
             </LinearGradient>
           </TouchableOpacity>
         </View>
-        {lastRecordingUri && (
-          <View style={styles.voiceHint}>
-            <Ionicons name="checkmark-circle" size={14} color={Colors.success} />
-            <Text style={styles.voiceHintText}>语音已记录，可继续提问或再次录音</Text>
-          </View>
-        )}
       </KeyboardAvoidingView>
 
       <Modal visible={showPresets} animationType="slide" transparent onRequestClose={() => setShowPresets(false)}>
@@ -381,7 +378,6 @@ const styles = StyleSheet.create({
   inputArea: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, backgroundColor: Colors.surface, borderTopWidth: 0.5, borderTopColor: Colors.border, gap: Spacing.sm },
   presetBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.primary + '10', justifyContent: 'center', alignItems: 'center' },
   voiceInputBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.secondary + '12', justifyContent: 'center', alignItems: 'center' },
-  voiceInputBtnActive: { backgroundColor: Colors.secondary },
   textInput: { flex: 1, minHeight: 40, maxHeight: 100, backgroundColor: Colors.background, borderRadius: BorderRadius.xl, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, fontSize: FontSize.md, color: Colors.text },
   sendBtn: { width: 40, height: 40, borderRadius: 12, overflow: 'hidden' },
   sendBtnDisabled: { opacity: 0.6 },
@@ -393,6 +389,4 @@ const styles = StyleSheet.create({
   presetList: { padding: Spacing.lg },
   presetItem: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.md, paddingHorizontal: Spacing.lg, backgroundColor: Colors.background, borderRadius: BorderRadius.md, marginBottom: Spacing.sm },
   presetText: { flex: 1, fontSize: FontSize.md, color: Colors.text },
-  voiceHint: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: Spacing.xl, paddingBottom: Spacing.sm, backgroundColor: Colors.surface },
-  voiceHintText: { fontSize: FontSize.xs, color: Colors.textSecondary },
 });

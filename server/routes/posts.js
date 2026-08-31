@@ -1,7 +1,8 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { authMiddleware, optionalAuth } = require('../middleware/auth');
-const { awardPoints } = require('./points');
+const { awardPoints, POINTS_RULES } = require('./points');
+const { createNotification } = require('../utils/notifications');
 
 const router = express.Router();
 
@@ -14,7 +15,7 @@ function formatPost(row) {
     id: row.id,
     userId: row.user_id,
     breedId: row.breed_id,
-    circleId: null,
+    circleId: row.circle_id || null,
     title: row.title,
     content: row.content,
     images: typeof row.images === 'string' ? JSON.parse(row.images) : (row.images || []),
@@ -90,7 +91,7 @@ router.get('/', optionalAuth, async (req, res) => {
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
     const offset = (page - 1) * limit;
     const sort = req.query.sort || 'hot';
-    const { breedId, tag, userId } = req.query;
+    const { breedId, tag, userId, circleId } = req.query;
 
     let whereClauses = ["p.status = 'published'"];
     const params = [];
@@ -102,6 +103,10 @@ router.get('/', optionalAuth, async (req, res) => {
     if (userId) {
       whereClauses.push('p.user_id = ?');
       params.push(userId);
+    }
+    if (circleId) {
+      whereClauses.push('p.circle_id = ?');
+      params.push(circleId);
     }
     if (tag) {
       whereClauses.push('JSON_CONTAINS(p.tags, ?)');
@@ -208,6 +213,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
  * Create a new post
  */
 router.post('/', authMiddleware, async (req, res) => {
+  let connection;
   try {
     const { content, title, images, tags, breedId, circleId } = req.body;
 
@@ -236,31 +242,29 @@ router.post('/', authMiddleware, async (req, res) => {
     const stats = JSON.stringify({ likesCount: 0, commentsCount: 0, viewsCount: 0 });
     let finalTags = Array.isArray(tags) ? [...tags] : [];
     let matchedCircleId = null;
+    connection = await req.app.locals.pool.getConnection();
+    await connection.beginTransaction();
 
     if (circleId) {
-      try {
-        const [circleRows] = await req.app.locals.pool.execute(
-          'SELECT name FROM circles WHERE id = ? AND status = ?',
-          [circleId, 'active']
-        );
-        if (circleRows.length > 0) {
-          matchedCircleId = circleId;
-          if (!finalTags.includes(circleRows[0].name)) {
-            finalTags.push(circleRows[0].name);
-          }
-        }
-      } catch {
-        // ignore optional circle enrichment when local schema is minimal
+      const [circleRows] = await connection.execute(
+        'SELECT id FROM circles WHERE id = ? AND status = ?',
+        [circleId, 'active']
+      );
+      if (circleRows.length === 0) {
+        await connection.rollback();
+        return res.status(404).json({ code: 1004, message: '圈子不存在' });
       }
+      matchedCircleId = circleId;
     }
 
-    await req.app.locals.pool.execute(
-      `INSERT INTO posts (id, user_id, breed_id, title, content, images, tags, stats, is_pinned, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, FALSE, 'published')`,
+    await connection.execute(
+      `INSERT INTO posts (id, user_id, breed_id, circle_id, title, content, images, tags, stats, is_pinned, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE, 'published')`,
       [
         postId,
         req.user.id,
         breedId || null,
+        matchedCircleId,
         title || null,
         content,
         JSON.stringify(images || []),
@@ -270,15 +274,14 @@ router.post('/', authMiddleware, async (req, res) => {
     );
 
     if (matchedCircleId) {
-      await req.app.locals.pool.execute(
+      await connection.execute(
         'UPDATE circles SET post_count = post_count + 1 WHERE id = ?',
         [matchedCircleId]
       );
     }
 
-    // Update user posts count
-    // Award points for creating a post
-    await awardPoints(req.app.locals.pool, req.user.id, 5, 'post', '发布帖子', postId);
+    await awardPoints(connection, req.user.id, POINTS_RULES.post_create, 'post', '发布帖子', postId);
+    await connection.commit();
 
     // Fetch and return the created post
     const [rows] = await req.app.locals.pool.execute(
@@ -298,8 +301,11 @@ router.post('/', authMiddleware, async (req, res) => {
 
     return res.status(201).json({ code: 0, data: post });
   } catch (error) {
+    if (connection) await connection.rollback();
     console.error('Create post error:', error);
     return res.status(500).json({ code: 5000, message: '服务器内部错误' });
+  } finally {
+    connection?.release();
   }
 });
 
@@ -402,7 +408,7 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     const postId = req.params.id;
 
     const [existing] = await req.app.locals.pool.execute(
-      'SELECT user_id, status FROM posts WHERE id = ?',
+      'SELECT user_id, circle_id, status FROM posts WHERE id = ?',
       [postId]
     );
 
@@ -418,22 +424,11 @@ router.delete('/:id', authMiddleware, async (req, res) => {
       [postId]
     );
 
-    const existingTags = typeof existing[0].tags === 'string'
-      ? JSON.parse(existing[0].tags)
-      : (existing[0].tags || []);
-
-    if (Array.isArray(existingTags) && existingTags.length > 0) {
-      const [circles] = await req.app.locals.pool.query(
-        'SELECT id, name FROM circles WHERE status = ?',
-        ['active']
+    if (existing[0].circle_id) {
+      await req.app.locals.pool.execute(
+        'UPDATE circles SET post_count = GREATEST(post_count - 1, 0) WHERE id = ?',
+        [existing[0].circle_id]
       );
-      const matchedCircle = circles.find((circle) => existingTags.includes(circle.name));
-      if (matchedCircle) {
-        await req.app.locals.pool.execute(
-          'UPDATE circles SET post_count = GREATEST(post_count - 1, 0) WHERE id = ?',
-          [matchedCircle.id]
-        );
-      }
     }
 
     return res.json({ code: 0, message: '帖子已删除' });
@@ -448,66 +443,73 @@ router.delete('/:id', authMiddleware, async (req, res) => {
  * Toggle like on a post
  */
 router.post('/:id/like', authMiddleware, async (req, res) => {
+  let connection;
   try {
     const postId = req.params.id;
+    connection = await req.app.locals.pool.getConnection();
+    await connection.beginTransaction();
 
-    // Check post exists
-    const [posts] = await req.app.locals.pool.execute(
-      "SELECT id, stats FROM posts WHERE id = ? AND status = 'published'",
+    const [posts] = await connection.execute(
+      "SELECT id, user_id, stats FROM posts WHERE id = ? AND status = 'published' FOR UPDATE",
       [postId]
     );
     if (posts.length === 0) {
+      await connection.rollback();
       return res.status(404).json({ code: 1004, message: '帖子不存在' });
     }
 
     const stats = typeof posts[0].stats === 'string' ? JSON.parse(posts[0].stats) : posts[0].stats;
 
     // Check existing like
-    const [existing] = await req.app.locals.pool.execute(
+    const [existing] = await connection.execute(
       'SELECT id FROM likes WHERE user_id = ? AND target_type = ? AND target_id = ?',
       [req.user.id, 'post', postId]
     );
 
     if (existing.length > 0) {
       // Unlike
-      await req.app.locals.pool.execute(
+      await connection.execute(
         'DELETE FROM likes WHERE user_id = ? AND target_type = ? AND target_id = ?',
         [req.user.id, 'post', postId]
       );
       stats.likesCount = Math.max(0, (stats.likesCount || 0) - 1);
-      await req.app.locals.pool.execute(
+      await connection.execute(
         'UPDATE posts SET stats = ? WHERE id = ?',
         [JSON.stringify(stats), postId]
       );
 
+      await connection.commit();
       return res.json({ code: 0, data: { liked: false, isLiked: false, likesCount: stats.likesCount, likeCount: stats.likesCount } });
     }
 
     // Like
     const likeId = uuidv4();
-    await req.app.locals.pool.execute(
+    await connection.execute(
       'INSERT INTO likes (id, user_id, target_type, target_id) VALUES (?, ?, ?, ?)',
       [likeId, req.user.id, 'post', postId]
     );
     stats.likesCount = (stats.likesCount || 0) + 1;
-    await req.app.locals.pool.execute(
+    await connection.execute(
       'UPDATE posts SET stats = ? WHERE id = ?',
       [JSON.stringify(stats), postId]
     );
-
-    // Award points to post owner (not self-like)
-    const [postOwner] = await req.app.locals.pool.execute(
-      'SELECT user_id FROM posts WHERE id = ?',
-      [postId]
-    );
-    if (postOwner.length > 0 && postOwner[0].user_id !== req.user.id) {
-      await awardPoints(req.app.locals.pool, postOwner[0].user_id, 1, 'like_received', '收到点赞', postId);
-    }
+    await createNotification(connection, {
+      userId: posts[0].user_id,
+      fromUserId: req.user.id,
+      type: 'like',
+      targetType: 'post',
+      targetId: postId,
+      content: '赞了你的帖子',
+    });
+    await connection.commit();
 
     return res.json({ code: 0, data: { liked: true, isLiked: true, likesCount: stats.likesCount, likeCount: stats.likesCount } });
   } catch (error) {
+    if (connection) await connection.rollback();
     console.error('Toggle like error:', error);
     return res.status(500).json({ code: 5000, message: '服务器内部错误' });
+  } finally {
+    connection?.release();
   }
 });
 

@@ -7,10 +7,8 @@ const router = express.Router();
 // ==================== 积分奖励规则 ====================
 const POINTS_RULES = {
   check_in: { base: 10, streak_bonus: 5, max_streak_bonus: 50 },
-  quiz_correct: 10,
   post_create: 5,
   comment_create: 2,
-  like_received: 1,
 };
 
 // ==================== 辅助函数 ====================
@@ -74,21 +72,25 @@ router.get('/today', authMiddleware, async (req, res) => {
 
 /** POST /api/points/check-in - 每日签到 */
 router.post('/check-in', authMiddleware, async (req, res) => {
+  let connection;
   try {
     const today = new Date().toISOString().split('T')[0];
+    connection = await req.app.locals.pool.getConnection();
+    await connection.beginTransaction();
 
     // 检查是否已签到
-    const [existing] = await req.app.locals.pool.execute(
+    const [existing] = await connection.execute(
       'SELECT id FROM check_ins WHERE user_id = ? AND check_in_date = ?',
       [req.user.id, today]
     );
 
     if (existing.length > 0) {
+      await connection.rollback();
       return res.status(409).json({ code: 3001, message: '今日已签到' });
     }
 
     // 计算连续签到天数
-    const [lastCheckIn] = await req.app.locals.pool.execute(
+    const [lastCheckIn] = await connection.execute(
       'SELECT check_in_date, streak FROM check_ins WHERE user_id = ? ORDER BY check_in_date DESC LIMIT 1',
       [req.user.id]
     );
@@ -109,21 +111,28 @@ router.post('/check-in', authMiddleware, async (req, res) => {
 
     // 写入签到记录
     const checkInId = uuidv4();
-    await req.app.locals.pool.execute(
+    await connection.execute(
       'INSERT INTO check_ins (id, user_id, check_in_date, streak, points_earned) VALUES (?, ?, ?, ?, ?)',
       [checkInId, req.user.id, today, streak, totalPoints]
     );
 
     // 加积分
-    await awardPoints(req.app.locals.pool, req.user.id, totalPoints, 'check_in', `每日签到（连续${streak}天）`);
+    await awardPoints(connection, req.user.id, totalPoints, 'check_in', `每日签到（连续${streak}天）`);
+    await connection.commit();
 
     return res.json({
       code: 0,
       data: { streak, pointsEarned: totalPoints, message: `签到成功！连续${streak}天，获得${totalPoints}积分` },
     });
   } catch (error) {
+    if (connection) await connection.rollback();
+    if (error?.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ code: 3001, message: '今日已签到' });
+    }
     console.error('Check-in error:', error);
     return res.status(500).json({ code: 5000, message: '服务器内部错误' });
+  } finally {
+    connection?.release();
   }
 });
 
@@ -159,29 +168,6 @@ router.get('/history', authMiddleware, async (req, res) => {
     return res.json({ code: 0, data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } });
   } catch (error) {
     console.error('Get points history error:', error);
-    return res.status(500).json({ code: 5000, message: '服务器内部错误' });
-  }
-});
-
-// ==================== 积分增加 ====================
-
-/** POST /api/points/earn - 增加积分（答题、发帖等） */
-router.post('/earn', authMiddleware, async (req, res) => {
-  try {
-    const { amount, type = 'reward', description = '', relatedId = null } = req.body;
-
-    if (!amount || typeof amount !== 'number' || amount <= 0) {
-      return res.status(400).json({ code: 2001, message: '积分数量必须为正数' });
-    }
-
-    await awardPoints(req.app.locals.pool, req.user.id, Math.round(amount), type, description || `获得${amount}积分`, relatedId);
-
-    return res.json({
-      code: 0,
-      data: { earned: amount, message: `成功获得${amount}积分` },
-    });
-  } catch (error) {
-    console.error('Earn points error:', error);
     return res.status(500).json({ code: 5000, message: '服务器内部错误' });
   }
 });

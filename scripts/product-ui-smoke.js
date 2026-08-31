@@ -1,5 +1,6 @@
 const http = require('http');
-const { spawn } = require('child_process');
+const path = require('path');
+const { spawn, spawnSync } = require('child_process');
 
 const FRONTEND_URL = process.env.UI_SMOKE_FRONTEND_URL || 'http://localhost:8081';
 const SHOULD_START_FRONTEND = process.env.UI_SMOKE_START_FRONTEND !== '0';
@@ -105,6 +106,36 @@ function getJson(url) {
       })
       .on('error', reject);
   });
+}
+
+async function apiRequest(method, path, body, accessToken) {
+  const response = await fetch(`http://localhost:3000/api${path}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  return { status: response.status, data: await response.json().catch(() => ({})) };
+}
+
+async function registerApiUser(label) {
+  const suffix = String(Date.now()).slice(-8);
+  const username = `${label}${suffix}`;
+  const result = await apiRequest('POST', '/auth/register', {
+    username,
+    email: `${username}@example.test`,
+    password: 'Smoke123',
+    nickname: `通知${suffix.slice(-4)}`,
+  });
+  if (result.status !== 201 || !result.data.data?.accessToken) {
+    throw new Error(`Notifier test user registration failed: ${JSON.stringify(result)}`);
+  }
+  return {
+    nickname: result.data.data.user.nickname,
+    accessToken: result.data.data.accessToken,
+  };
 }
 
 async function waitForJson(url, attempts = 25) {
@@ -225,7 +256,7 @@ async function openClient() {
         item.type === 'page' &&
         item.webSocketDebuggerUrl &&
         item.url?.startsWith(FRONTEND_URL),
-    );
+    ) || pages.find((item) => item.type === 'page' && item.webSocketDebuggerUrl);
   }, 30000, 300);
   if (!page) throw new Error('No debuggable page found');
   const client = new CdpClient(page.webSocketDebuggerUrl);
@@ -278,7 +309,10 @@ async function clickTestId(client, testId) {
       return true;
     })();
   `), 60000, 300);
-  if (!clicked) throw new Error(`Missing testId: ${testId}`);
+  if (!clicked) {
+    const state = await pageState(client);
+    throw new Error(`Missing testId: ${testId}; state=${JSON.stringify(state)}`);
+  }
   await wait(1200);
 }
 
@@ -342,8 +376,10 @@ function makeUser() {
   const shortSuffix = String(suffix).slice(-8);
   return {
     username: `ui${shortSuffix}`,
+    email: `ui${shortSuffix}@example.test`,
     password: 'Smoke123',
     nickname: `Smoke${String(suffix).slice(-4)}`,
+    petName: `团团${String(suffix).slice(-4)}`,
     postContent: `UI smoke post ${shortSuffix}`,
     commentContent: `UI smoke comment ${shortSuffix}`,
   };
@@ -351,10 +387,17 @@ function makeUser() {
 
 async function run() {
   const user = makeUser();
+  const notifier = await registerApiUser('notify');
   const frontend = await ensureFrontend();
   const chrome = await ensureChrome();
   const client = await openClient();
   try {
+    await waitForReady(client);
+    await client.send('Storage.clearDataForOrigin', {
+      origin: FRONTEND_URL,
+      storageTypes: 'all',
+    }).catch(() => undefined);
+    await client.send('Network.clearBrowserCookies').catch(() => undefined);
     await waitForReady(client);
 
     const startText = await textSnapshot(client);
@@ -367,12 +410,23 @@ async function run() {
       throw new Error(`Frontend home did not render expected text: ${JSON.stringify(startState)}`);
     }
 
+    await route(client, '/wiki');
+    const guestWikiText = await waitFor(async () => {
+      const text = await textSnapshot(client);
+      return text.includes('品种百科') && (text.includes('个品种') || text.includes('百科数据为空')) ? text : null;
+    }, 20000, 800);
+    if (!guestWikiText) {
+      const state = await pageState(client);
+      throw new Error(`Guest wiki did not render breed encyclopedia: ${JSON.stringify(state)}`);
+    }
+
     await route(client, '/login');
     await fillByTestId(client, 'login-username-input', user.username);
     await fillByTestId(client, 'login-password-input', user.password);
     await clickTestId(client, 'login-to-register-link');
 
     await fillByTestId(client, 'register-username-input', user.username);
+    await fillByTestId(client, 'register-email-input', user.email);
     await fillByTestId(client, 'register-password-input', user.password);
     await fillByTestId(client, 'register-confirm-password-input', user.password);
     await fillByTestId(client, 'register-nickname-input', user.nickname);
@@ -390,16 +444,47 @@ async function run() {
       throw new Error(`Unexpected post-register page: ${JSON.stringify(postRegister)}`);
     }
 
+    await route(client, '/pet');
+    await fillByTestId(client, 'primary-pet-name-input', user.petName);
+    await fillByTestId(client, 'primary-pet-birthday-input', '2024-01-02');
+    await clickTestId(client, 'primary-pet-sex-male');
+    await clickTestId(client, 'primary-pet-save-btn');
+    await wait(2500);
+
+    const petText = await waitFor(async () => {
+      const text = await textSnapshot(client);
+      return text.includes(user.petName) ? text : null;
+    }, 20000, 800);
+    if (!petText) {
+      const state = await pageState(client);
+      throw new Error(`Primary pet was not visible after save: ${JSON.stringify(state)}`);
+    }
+
     await clickTestId(client, 'tab-community');
     await clickTestId(client, 'community-tab-latest');
+    const communityC5Name = await client.evaluate(`
+      (document.querySelector('[data-testid="community-circle-chip-c5"]') || {}).innerText || ''
+    `);
+    if (!communityC5Name.includes('新手铲屎官')) {
+      throw new Error(`Community did not render API-backed c5 name: ${JSON.stringify({ communityC5Name, state: await pageState(client) })}`);
+    }
     await clickTestId(client, 'community-create-post-btn');
 
     const createPage = await pageState(client);
     if (!createPage.testIds.includes('create-post-content-input')) {
       throw new Error(`Create page did not render expected input: ${JSON.stringify(createPage)}`);
     }
+    if (!createPage.testIds.includes('create-post-circle-c5')) {
+      throw new Error(`Create page did not render the API-backed c5 circle: ${JSON.stringify(createPage)}`);
+    }
+    const createC5Name = await client.evaluate(`
+      (document.querySelector('[data-testid="create-post-circle-c5"]') || {}).innerText || ''
+    `);
+    if (!createC5Name.includes('新手铲屎官')) {
+      throw new Error(`Create page did not render API-backed c5 name: ${JSON.stringify({ createC5Name, state: createPage })}`);
+    }
     await fillByTestId(client, 'create-post-content-input', user.postContent);
-    await clickTestId(client, 'create-post-circle-c1');
+    await clickTestId(client, 'create-post-circle-c5');
     await clickTestId(client, 'create-post-submit-btn');
     await wait(3500);
 
@@ -417,12 +502,84 @@ async function run() {
     `), 12000, 800);
     if (!postId) throw new Error('Could not locate created post card in UI');
 
+    await clickTestId(client, 'community-circle-chip-c5');
+    const filteredPostId = await waitFor(() => client.evaluate(`
+      (function() {
+        const cards = [...document.querySelectorAll('[data-testid^="post-card-"]')];
+        const card = cards.find((node) => (node.innerText || '').includes(${JSON.stringify(user.postContent)}));
+        return card ? card.getAttribute('data-testid').replace('post-card-', '') : null;
+      })();
+    `), 12000, 800);
+    if (filteredPostId !== postId) {
+      throw new Error(`Circle filter did not return the newly created post: ${JSON.stringify({ postId, filteredPostId })}`);
+    }
+
+    const externalComment = await apiRequest(
+      'POST',
+      `/posts/${postId}/comments`,
+      { content: `通知测试评论 ${user.postContent}` },
+      notifier.accessToken,
+    );
+    if (externalComment.status !== 201) {
+      throw new Error(`External notification comment failed: ${JSON.stringify(externalComment)}`);
+    }
+
     await clickTestId(client, `post-${postId}-bookmark-btn`);
     await wait(1200);
     await clickTestId(client, 'community-see-all-circles-btn');
     await wait(1800);
-    await clickTestId(client, 'circle-list-join-c1');
+    const circleListState = await pageState(client);
+    if (!circleListState.testIds.includes('circle-list-card-c5')) {
+      throw new Error(`Circle list did not render API-backed c5 card: ${JSON.stringify(circleListState)}`);
+    }
+    await clickTestId(client, 'circle-list-create-btn');
     await wait(1200);
+    const createdCircleName = `UI圈子${String(Date.now()).slice(-6)}`;
+    await fillByTestId(client, 'create-circle-name-input', createdCircleName);
+    await fillByTestId(client, 'create-circle-description-input', 'UI 冒烟创建的圈子');
+    await clickTestId(client, 'create-circle-submit-btn');
+    await wait(2000);
+    const createdCircleState = await pageState(client);
+    if (!createdCircleState.text.includes(createdCircleName) || !createdCircleState.testIds.includes('circle-detail-name')) {
+      throw new Error(`Created circle did not reach detail page: ${JSON.stringify(createdCircleState)}`);
+    }
+    if (!createdCircleState.testIds.includes('circle-detail-edit-btn')) {
+      throw new Error(`Circle owner did not receive edit action: ${JSON.stringify(createdCircleState)}`);
+    }
+    await clickTestId(client, 'circle-detail-edit-btn');
+    await wait(500);
+    await fillByTestId(client, 'circle-detail-edit-description-input', 'UI 冒烟编辑后的圈子简介');
+    await clickTestId(client, 'circle-detail-edit-submit-btn');
+    await wait(1600);
+    const editedCircleState = await pageState(client);
+    if (!editedCircleState.text.includes('UI 冒烟编辑后的圈子简介')) {
+      throw new Error(`Circle owner edit did not update detail page: ${JSON.stringify(editedCircleState)}`);
+    }
+    await back(client);
+    await wait(1200);
+    await clickTestId(client, 'circle-list-join-c5');
+    await wait(1200);
+    await clickTestId(client, 'circle-list-tab-my');
+    await wait(1500);
+    const myCirclesState = await pageState(client);
+    if (!myCirclesState.testIds.includes('circle-list-card-c5')) {
+      throw new Error(`My circles did not include joined c5: ${JSON.stringify(myCirclesState)}`);
+    }
+    await clickTestId(client, 'circle-list-tab-all');
+    await wait(1000);
+    await clickTestId(client, 'circle-list-card-c5');
+    await wait(1800);
+    const circleDetail = await pageState(client);
+    if (!circleDetail.testIds.includes('circle-detail-name')) {
+      throw new Error(`Circle detail did not render API-backed detail state: ${JSON.stringify(circleDetail)}`);
+    }
+    await clickTestId(client, 'circle-detail-members-btn');
+    await wait(1000);
+    const membersState = await pageState(client);
+    if (!membersState.text.includes('圈子成员') || !membersState.text.includes('成员')) {
+      throw new Error(`Circle members panel did not render: ${JSON.stringify(membersState)}`);
+    }
+    await clickTestId(client, 'circle-detail-members-close-btn');
     await back(client);
     await clickTestId(client, `post-${postId}-comment-btn`);
     await wait(1600);
@@ -446,12 +603,14 @@ async function run() {
     await wait(1200);
     await clickTestId(client, 'tab-profile');
     await wait(1800);
-    await clickTestId(client, 'profile-menu-favorites');
-    await wait(1500);
-
-    const favoritesText = await textSnapshot(client);
-    if (!favoritesText.includes(user.postContent)) {
-      throw new Error('Bookmarked post not visible in favorites modal');
+    await clickTestId(client, 'profile-menu-notification');
+    const notificationText = await waitFor(async () => {
+      const text = await textSnapshot(client);
+      return text.includes('评论了你的帖子') ? text : null;
+    }, 20000, 800);
+    if (!notificationText) {
+      const state = await pageState(client);
+      throw new Error(`Real notification was not visible: ${JSON.stringify(state)}`);
     }
 
     console.log(JSON.stringify({
@@ -464,12 +623,14 @@ async function run() {
       postContent: user.postContent,
       commentContent: user.commentContent,
       verified: [
+        'guest-wiki',
         'register',
+        'create-primary-pet',
         'create-post',
         'comment-post',
         'join-circle',
         'bookmark-post',
-        'favorites-visible',
+        'real-notification-visible',
       ],
     }, null, 2));
   } finally {
@@ -479,6 +640,13 @@ async function run() {
     }
     if (chrome) {
       stopProcessTree(chrome);
+    }
+    const cleanup = spawnSync(process.execPath, [path.join(__dirname, 'cleanup-test-data.js'), '--apply'], {
+      stdio: 'inherit',
+      env: process.env,
+    });
+    if (cleanup.status !== 0) {
+      throw new Error(`UI smoke test data cleanup failed with exit code ${cleanup.status}`);
     }
   }
 }

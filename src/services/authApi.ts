@@ -8,6 +8,7 @@ export interface User {
   avatarUrl: string | null;
   phone: string | null;
   email: string | null;
+  emailVerifiedAt?: string | null;
   bio: string;
   level: number;
   points: number;
@@ -29,6 +30,11 @@ export interface AuthResult {
   refreshToken: string;
 }
 
+export interface EmailCodeResult {
+  expiresIn: number;
+  debugCode?: string;
+}
+
 /** API 响应包装 */
 interface ApiResponse<T> {
   code: number;
@@ -44,6 +50,7 @@ function normalizeUser(raw: any): User {
     avatarUrl: raw?.avatarUrl ? getApiAssetUrl(raw.avatarUrl) : null,
     phone: raw?.phone || null,
     email: raw?.email || null,
+    emailVerifiedAt: raw?.emailVerifiedAt || raw?.email_verified_at || null,
     bio: raw?.bio || '',
     level: Number(raw?.level ?? 1),
     points: Number(raw?.points ?? 0),
@@ -107,77 +114,13 @@ export interface ChangePasswordParams {
   newPassword: string;
 }
 
-// ==================== Mock 模式 ====================
-
-const MOCK_USERS_KEY = 'pet_planet_mock_users';
-const MOCK_CURRENT_USER_KEY = 'pet_planet_mock_current_user';
-
-function getMockUsers(): Record<string, { user: User; password: string }> {
-  try {
-    const data = localStorage.getItem(MOCK_USERS_KEY);
-    return data ? JSON.parse(data) : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveMockUsers(users: Record<string, { user: User; password: string }>) {
-  localStorage.setItem(MOCK_USERS_KEY, JSON.stringify(users));
-}
-
-function generateMockToken(): string {
-  return 'mock_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
-}
-
-function createMockUser(params: RegisterParams): AuthResult {
-  const id = 'user_' + Date.now();
-  const now = new Date().toISOString();
-  const uname = params.username || params.phone || params.email || '';
-  const user: User = {
-    id,
-    username: uname,
-    nickname: params.nickname || uname,
-    avatarUrl: null,
-    phone: params.phone || null,
-    email: params.email || null,
-    bio: '',
-    level: 1,
-    points: 100,
-    createdAt: now,
-  };
-
-  const users = getMockUsers();
-  users[uname] = { user, password: params.password || '' };
-  saveMockUsers(users);
-
-  const accessToken = generateMockToken();
-  const refreshToken = generateMockToken();
-
-  localStorage.setItem(MOCK_CURRENT_USER_KEY, JSON.stringify({ user, accessToken, refreshToken }));
-
-  return { user, accessToken, refreshToken };
-}
-
-function mockLogin(username: string, password: string): AuthResult | null {
-  const users = getMockUsers();
-  const entry = users[username];
-  if (!entry || entry.password !== password) return null;
-
-  const accessToken = generateMockToken();
-  const refreshToken = generateMockToken();
-
-  localStorage.setItem(MOCK_CURRENT_USER_KEY, JSON.stringify({ user: entry.user, accessToken, refreshToken }));
-
-  return { user: entry.user, accessToken, refreshToken };
-}
-
 // ==================== API 方法 ====================
 
 export const authApi = {
   /** 密码登录 */
   async login(params: LoginParams): Promise<AuthResult> {
     const res = await apiClient.post<ApiResponse<AuthResult>>('/auth/login', {
-      username: params.username || params.phone || params.email,
+      ...(params.email ? { email: params.email } : { username: params.username || params.phone }),
       password: params.password,
     });
     return {
@@ -205,6 +148,32 @@ export const authApi = {
   async sendSmsCode(phone: string, type: 'login' | 'register' | 'reset'): Promise<{ expiresIn: number }> {
     const res = await apiClient.post<ApiResponse<{ expiresIn: number }>>('/auth/sms/send', { phone, type });
     return res.data;
+  },
+
+  /** 发送邮箱登录验证码 */
+  async sendEmailLoginCode(email: string): Promise<EmailCodeResult> {
+    const res = await apiClient.post<ApiResponse<EmailCodeResult>>('/auth/email/login-code/send', { email });
+    return res.data;
+  },
+
+  /** 使用邮箱验证码登录 */
+  async loginWithEmailCode(email: string, code: string): Promise<AuthResult> {
+    const res = await apiClient.post<ApiResponse<AuthResult>>('/auth/email/login-code/login', { email, code });
+    return {
+      ...res.data,
+      user: normalizeUser(res.data.user),
+    };
+  },
+
+  /** 发送邮箱激活/验证邮件 */
+  async sendEmailVerification(email: string): Promise<{ expiresIn: number }> {
+    const res = await apiClient.post<ApiResponse<{ expiresIn: number }>>('/auth/email/verification/send', { email });
+    return res.data;
+  },
+
+  /** 消费邮箱激活链接 */
+  async verifyEmail(token: string): Promise<void> {
+    await apiClient.get<ApiResponse<null>>(`/auth/verify-email?token=${encodeURIComponent(token)}`);
   },
 
   /** 刷新 Token */

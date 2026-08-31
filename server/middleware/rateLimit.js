@@ -1,4 +1,6 @@
-function createRateLimit({ windowMs, max, keyPrefix = 'default' }) {
+const crypto = require('crypto');
+
+function createRateLimit({ windowMs, max, keyPrefix = 'default', keyGenerator }) {
   const buckets = new Map();
 
   function reject(res, resetAt) {
@@ -30,7 +32,10 @@ function createRateLimit({ windowMs, max, keyPrefix = 'default' }) {
 
   return async (req, res, next) => {
     const identity = req.ip || req.socket?.remoteAddress || 'unknown';
-    const key = `${keyPrefix}:${identity}`;
+    const customIdentity = keyGenerator ? String(keyGenerator(req) || identity) : identity;
+    const key = keyGenerator
+      ? `${keyPrefix}:${crypto.createHash('sha256').update(customIdentity).digest('hex')}`
+      : `${keyPrefix}:${identity}`;
     const pool = req.app?.locals?.pool;
 
     if (!pool) {
@@ -67,6 +72,10 @@ function createRateLimit({ windowMs, max, keyPrefix = 'default' }) {
 
       return next();
     } catch (error) {
+      if (req.app?.locals?.runtimeConfig?.production || process.env.NODE_ENV === 'production') {
+        console.error('[rateLimit] Database unavailable in production; rejecting request:', error.message);
+        return res.status(503).json({ code: 5030, message: '限流服务暂不可用，请稍后重试' });
+      }
       console.error('[rateLimit] Falling back to memory bucket:', error.message);
       return memoryLimit(req, res, next, key);
     }

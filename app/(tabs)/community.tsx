@@ -4,7 +4,7 @@
  * 支持下拉刷新和上拉加载更多
  */
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -25,17 +25,9 @@ import { ensureLoggedIn } from '../../src/utils/nav';
 import AnimatedListItem from '../../src/components/AnimatedListItem';
 import PostCard from '../../src/components/community/PostCard';
 import { getPosts, toggleLike, toggleBookmark } from '../../src/services/postService';
+import { getCircles, type Circle } from '../../src/services/circleService';
 import useInfiniteScroll from '../../src/hooks/useInfiniteScroll';
-import type { Post, CommunityCircle } from '../../src/types';
-
-const circles: CommunityCircle[] = [
-  { id: 'c1', name: '布偶圈', count: '1.2万', emoji: '🐱' },
-  { id: 'c2', name: '英短圈', count: '9.8千', emoji: '🐱' },
-  { id: 'c3', name: '柯基圈', count: '1.5万', emoji: '🐶' },
-  { id: 'c4', name: '金毛圈', count: '2.1万', emoji: '🐶' },
-  { id: 'c5', name: '橘猫圈', count: '8.5千', emoji: '🐱' },
-  { id: 'c6', name: '哈士奇圈', count: '6.2千', emoji: '🐶' },
-];
+import type { Post } from '../../src/types';
 
 const circleIcons: Record<string, keyof typeof Ionicons.glyphMap> = {
   c1: 'sparkles-outline',
@@ -43,7 +35,6 @@ const circleIcons: Record<string, keyof typeof Ionicons.glyphMap> = {
   c3: 'walk-outline',
   c4: 'sunny-outline',
   c5: 'home-outline',
-  c6: 'flash-outline',
 };
 
 export default function CommunityPage() {
@@ -51,7 +42,30 @@ export default function CommunityPage() {
   const { status, user } = useAuth();
   const [activeTab, setActiveTab] = useState<'hot' | 'latest'>('hot');
   const [selectedCircle, setSelectedCircle] = useState<string | null>(null);
+  const [circles, setCircles] = useState<Circle[]>([]);
+  const [circlesLoading, setCirclesLoading] = useState(true);
+  const [circlesError, setCirclesError] = useState<string | null>(null);
   const didFocusOnceRef = useRef(false);
+
+  const loadCircles = useCallback(async () => {
+    setCirclesLoading(true);
+    setCirclesError(null);
+    try {
+      const data = await getCircles();
+      setCircles(data);
+      setSelectedCircle((current) => (
+        current && data.some((circle) => circle.id === current) ? current : null
+      ));
+    } catch {
+      setCirclesError('圈子加载失败，请重试');
+    } finally {
+      setCirclesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCircles();
+  }, [loadCircles]);
 
   const loadPosts = useCallback(
     async (page: number, pageSize: number) => {
@@ -246,53 +260,73 @@ export default function CommunityPage() {
             <Text style={styles.seeAll}>全部</Text>
           </TouchableOpacity>
         </View>
-        <FlatList
-          data={circles}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          keyExtractor={(item) => item.name}
-          renderItem={({ item, index }) => (
-            <AnimatedListItem index={index} delay={80}>
-              <TouchableOpacity
-                testID={`community-circle-chip-${item.id}`}
-                style={[
-                  styles.circleCard,
-                  selectedCircle === item.id && styles.circleCardActive,
-                ]}
-                activeOpacity={0.7}
-                accessibilityRole="button"
-                accessibilityLabel={`${selectedCircle === item.id ? '取消筛选' : '筛选'}${item.name}`}
-                onPress={() => {
-                  setSelectedCircle(
-                    selectedCircle === item.id ? null : item.id,
-                  );
-                }}
-              >
-                <View
+        {circlesLoading ? (
+          <View style={styles.circleStatus}>
+            <ActivityIndicator size="small" color={Colors.primary} />
+            <Text style={styles.circleStatusText}>加载圈子...</Text>
+          </View>
+        ) : circlesError ? (
+          <View style={styles.circleStatus}>
+            <Text style={styles.circleStatusText}>{circlesError}</Text>
+            <TouchableOpacity
+              testID="community-circles-retry-btn"
+              onPress={loadCircles}
+              accessibilityRole="button"
+              accessibilityLabel="重试加载圈子"
+            >
+              <Text style={styles.circleRetryText}>重试</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <FlatList
+            data={circles}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(item) => item.id}
+            ListEmptyComponent={<Text style={styles.circleStatusText}>暂无圈子</Text>}
+            renderItem={({ item, index }) => (
+              <AnimatedListItem index={index} delay={80}>
+                <TouchableOpacity
+                  testID={`community-circle-chip-${item.id}`}
                   style={[
-                    styles.circleIcon,
-                    selectedCircle === item.id && styles.circleIconActive,
+                    styles.circleCard,
+                    selectedCircle === item.id && styles.circleCardActive,
                   ]}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${selectedCircle === item.id ? '取消筛选' : '筛选'}${item.name}`}
+                  onPress={() => {
+                    setSelectedCircle(
+                      selectedCircle === item.id ? null : item.id,
+                    );
+                  }}
                 >
-                  <Ionicons
-                    name={circleIcons[item.id] || 'paw-outline'}
-                    size={18}
-                    color={selectedCircle === item.id ? Colors.surface : Colors.primary}
-                  />
-                </View>
-                <Text
-                  style={[
-                    styles.circleName,
-                    selectedCircle === item.id && { color: Colors.primary },
-                  ]}
-                >
-                  {item.name}
-                </Text>
-                <Text style={styles.circleCount}>{item.count}</Text>
-              </TouchableOpacity>
-            </AnimatedListItem>
-          )}
-        />
+                  <View
+                    style={[
+                      styles.circleIcon,
+                      selectedCircle === item.id && styles.circleIconActive,
+                    ]}
+                  >
+                    <Ionicons
+                      name={circleIcons[item.id] || 'paw-outline'}
+                      size={18}
+                      color={selectedCircle === item.id ? Colors.surface : Colors.primary}
+                    />
+                  </View>
+                  <Text
+                    style={[
+                      styles.circleName,
+                      selectedCircle === item.id && { color: Colors.primary },
+                    ]}
+                  >
+                    {item.name}
+                  </Text>
+                  <Text style={styles.circleCount}>{formatCount(item.memberCount)}</Text>
+                </TouchableOpacity>
+              </AnimatedListItem>
+            )}
+          />
+        )}
       </View>
 
       {/* 标签切换 */}
@@ -423,6 +457,12 @@ export default function CommunityPage() {
   );
 }
 
+function formatCount(count: number): string {
+  if (count >= 10000) return `${(count / 10000).toFixed(1)}w`;
+  if (count >= 1000) return `${(count / 1000).toFixed(1)}k`;
+  return String(count);
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -515,6 +555,21 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.border,
+  },
+  circleStatus: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  circleStatusText: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+  },
+  circleRetryText: {
+    fontSize: FontSize.xs,
+    color: Colors.primary,
+    fontWeight: '600',
   },
   sectionHeader: {
     flexDirection: 'row',

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,16 +8,17 @@ import {
   TextInput,
   RefreshControl,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, BorderRadius, FontSize, Shadows } from '../../src/utils/theme';
-import { breeds } from '../../src/data/breeds';
 import BreedCard from '../../src/components/BreedCard';
 import AnimatedListItem from '../../src/components/AnimatedListItem';
 import SearchFilter from '../../src/components/SearchFilter';
 import useSearchHistory from '../../src/hooks/useSearchHistory';
+import { fetchBreeds } from '../../src/services/breedService';
 import {
   searchBreeds,
   quickSearch,
@@ -28,6 +29,8 @@ import type { Breed, Species } from '../../src/types';
 
 export default function WikiPage() {
   const router = useRouter();
+  const [breedList, setBreedList] = useState<Breed[]>([]);
+  const [loadStatus, setLoadStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -39,6 +42,21 @@ export default function WikiPage() {
     useSearchHistory();
   const searchInputRef = useRef<TextInput>(null);
 
+  const loadBreeds = useCallback(async () => {
+    setLoadStatus(prev => (prev === 'ready' ? prev : 'loading'));
+    try {
+      const data = await fetchBreeds({ page: 1, limit: 50 });
+      setBreedList(data);
+      setLoadStatus('ready');
+    } catch {
+      setLoadStatus('error');
+    }
+  }, []);
+
+  useEffect(() => {
+    loadBreeds();
+  }, [loadBreeds]);
+
   // 使用 searchService 进行筛选
   const filteredBreeds = useMemo(
     () =>
@@ -46,17 +64,18 @@ export default function WikiPage() {
         query: searchQuery,
         filters,
         sortBy: 'popularity',
+        source: breedList,
       }),
-    [searchQuery, filters]
+    [searchQuery, filters, breedList]
   );
 
   // 搜索建议（实时）
   const suggestions = useMemo(
     () =>
       searchQuery.trim() && isSearchFocused
-        ? quickSearch(searchQuery, 5)
+        ? quickSearch(searchQuery, 5, breedList)
         : [],
-    [searchQuery, isSearchFocused]
+    [searchQuery, isSearchFocused, breedList]
   );
 
   const handleSearch = useCallback(
@@ -134,9 +153,9 @@ export default function WikiPage() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await loadBreeds();
     setRefreshing(false);
-  }, []);
+  }, [loadBreeds]);
 
   /** 搜索建议下拉区域 */
   const renderSuggestions = () => {
@@ -351,13 +370,22 @@ export default function WikiPage() {
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
       <View style={styles.emptyIconWrap}>
-        <Ionicons name="search-outline" size={40} color={Colors.textLight} />
+        <Ionicons name={breedList.length === 0 ? 'albums-outline' : 'search-outline'} size={40} color={Colors.textLight} />
       </View>
-      <Text style={styles.emptyTitle}>没有找到匹配的品种</Text>
-      <Text style={styles.emptySubtitle}>试试其他关键词或调整筛选条件</Text>
-      <TouchableOpacity style={styles.emptyBtn} onPress={clearAllFilters}>
-        <Text style={styles.emptyBtnText}>重置筛选</Text>
-      </TouchableOpacity>
+      {breedList.length === 0 ? (
+        <>
+          <Text style={styles.emptyTitle}>百科数据为空</Text>
+          <Text style={styles.emptySubtitle}>当前数据库还没有可浏览的品种</Text>
+        </>
+      ) : (
+        <>
+          <Text style={styles.emptyTitle}>没有找到匹配的品种</Text>
+          <Text style={styles.emptySubtitle}>试试其他关键词或调整筛选条件</Text>
+          <TouchableOpacity style={styles.emptyBtn} onPress={clearAllFilters}>
+            <Text style={styles.emptyBtnText}>重置筛选</Text>
+          </TouchableOpacity>
+        </>
+      )}
     </View>
   );
 
@@ -369,6 +397,34 @@ export default function WikiPage() {
     ),
     [router]
   );
+
+  if (loadStatus === 'loading' || loadStatus === 'idle') {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="small" color={Colors.primary} />
+          <Text style={styles.emptySubtitle}>加载品种百科...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (loadStatus === 'error') {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.emptyContainer}>
+          <View style={styles.emptyIconWrap}>
+            <Ionicons name="cloud-offline-outline" size={40} color={Colors.textLight} />
+          </View>
+          <Text style={styles.emptyTitle}>暂时无法连接服务，请稍后重试</Text>
+          <Text style={styles.emptySubtitle}>百科需要从后端数据库读取真实品种数据</Text>
+          <TouchableOpacity style={styles.emptyBtn} onPress={loadBreeds}>
+            <Text style={styles.emptyBtnText}>重试</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -471,6 +527,7 @@ export default function WikiPage() {
       <SearchFilter
         visible={showFilter}
         filters={filters}
+        source={breedList}
         onConfirm={handleFilterConfirm}
         onReset={handleFilterReset}
         onClose={() => setShowFilter(false)}
@@ -483,6 +540,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
+  },
+  loadingContainer: {
+    flex: 1,
+    minHeight: 360,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.xl,
   },
   header: {
     flexDirection: 'row',

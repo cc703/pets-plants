@@ -9,6 +9,7 @@ import NetworkBanner from '../src/components/NetworkBanner';
 import useNetworkStatus from '../src/hooks/useNetworkStatus';
 import { AuthProvider } from '../src/contexts/AuthContext';
 import { PetProvider } from '../src/contexts/PetContext';
+import { UserPetProvider } from '../src/contexts/UserPetContext';
 import AuthGuard from '../src/components/AuthGuard';
 
 export default function RootLayout() {
@@ -22,6 +23,7 @@ export default function RootLayout() {
   return (
     <ErrorBoundary>
       <AuthProvider>
+        <UserPetProvider>
         <PetProvider>
         <AuthGuard>
           <StatusBar style="dark" />
@@ -60,6 +62,12 @@ export default function RootLayout() {
               options={{
                 animation: 'slide_from_bottom',
                 presentation: 'modal',
+              }}
+            />
+            <Stack.Screen
+              name="my-posts"
+              options={{
+                animation: 'slide_from_right',
               }}
             />
             {/* 用户主页 */}
@@ -112,6 +120,7 @@ export default function RootLayout() {
           </Stack>
         </AuthGuard>
         </PetProvider>
+        </UserPetProvider>
       </AuthProvider>
     </ErrorBoundary>
   );

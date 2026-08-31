@@ -49,14 +49,19 @@ export default function TabLayout() {
         tabBarStyle: {
           backgroundColor: Colors.surface,
           borderTopColor: Colors.border,
-          borderTopWidth: 0.5,
-          height: Platform.OS === 'ios' ? 60 + Math.max(insets.bottom, 12) : 64,
+          borderTopWidth: 1,
+          height: Platform.OS === 'ios' ? 62 + Math.max(insets.bottom, 12) : 66,
           paddingBottom: Platform.OS === 'ios' ? Math.max(insets.bottom, 12) : 8,
           paddingTop: 8,
+          shadowColor: Colors.text,
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.04,
+          shadowRadius: 10,
+          elevation: 8,
         },
         tabBarLabelStyle: {
           fontSize: FontSize.xs,
-          fontWeight: '500',
+          fontWeight: '600',
         },
       }}
     >
@@ -71,6 +76,16 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="wiki"
+        options={{
+          title: '百科',
+          tabBarButtonTestID: 'tab-wiki',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="book" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="community"
         options={{
           title: '社区',
@@ -81,29 +96,12 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="publish"
+        name="ai"
         options={{
-          title: '发布',
-          tabBarButtonTestID: 'tab-publish',
+          title: 'AI 顾问',
+          tabBarButtonTestID: 'tab-ai',
           tabBarIcon: ({ color, size }) => (
-            <View style={styles.publishIcon}>
-              <Ionicons name="add" size={size} color={Colors.surface} />
-            </View>
-          ),
-          tabBarLabelStyle: {
-            fontSize: FontSize.xs,
-            fontWeight: '700',
-            color: Colors.primary,
-          },
-        }}
-      />
-      <Tabs.Screen
-        name="wiki"
-        options={{
-          title: '百科',
-          tabBarButtonTestID: 'tab-wiki',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="book" size={size} color={color} />
+            <Ionicons name="sparkles" size={size} color={color} />
           ),
         }}
       />
@@ -120,7 +118,7 @@ export default function TabLayout() {
           ),
         }}
       />
-      <Tabs.Screen name="ai" options={{ href: null }} />
+      <Tabs.Screen name="publish" options={{ href: null }} />
       <Tabs.Screen name="pet" options={{ href: null }} />
       <Tabs.Screen name="quiz" options={{ href: null }} />
       <Tabs.Screen name="notification" options={{ href: null }} />
@@ -148,14 +146,5 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '700',
     lineHeight: 12,
-  },
-  publishIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: Colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: -4,
   },
 });

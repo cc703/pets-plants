@@ -46,7 +46,7 @@ users ─┬─< virtual_pets >── breeds
 |------|------|------|------|
 | id | VARCHAR(36) | PK | UUID 主键 |
 | username | VARCHAR(50) | UNIQUE, NOT NULL | 登录用户名 |
-| password_hash | VARCHAR(255) | NOT NULL | bcrypt 密码哈希 |
+| password_hash | VARCHAR(255) | 新库 NOT NULL；旧库迁移后允许 NULL | bcrypt 密码哈希；NULL 表示历史账号需先通过邮箱验证码登录并设置初始密码 |
 | phone | VARCHAR(20) | | 手机号 |
 | email | VARCHAR(100) | | 邮箱 |
 | avatar_url | VARCHAR(500) | | 头像地址 |
@@ -380,6 +380,45 @@ users ─┬─< virtual_pets >── breeds
 ---
 
 ## 10. 部署指南
+
+### 10.1 选择唯一初始化路径
+
+新数据库只执行完整结构，再按需写入种子数据：
+
+```bash
+mysql -u root -p < server/full_schema.sql
+node server/seed.js
+```
+
+已有旧数据库先备份或克隆，再严格按以下顺序执行增量迁移：
+
+```text
+002_auth_tables.sql
+003_community_tables.sql
+004_posts_stats_schema.sql
+005_email_reset_and_rate_limit.sql
+006_user_pets.sql
+007_email_identity.sql
+008_backfill_post_circle_ids.sql
+009_email_verification.sql
+010_email_login_codes.sql
+```
+
+`001_initial_schema.sql` 仅是历史基线记录，不是可重复执行的建库脚本。
+完整结构初始化后不要再执行 `002` 到 `010`；旧库升级也不要重新执行
+`001`。迁移不会在应用启动时隐式执行，失败后按
+[`server/migrations/README.md`](../server/migrations/README.md) 的克隆库恢复流程处理。
+
+### 10.2 关键结构来源
+
+| 对象 | 关键字段/索引 | 来源 |
+|------|------|------|
+| `users` | 认证资料字段、邮箱验证时间、邮箱普通索引、`uk_users_email` | `full_schema.sql`、`002`、`007`、`009` |
+| `posts` | `stats`、`circle_id` 及对应索引 | `full_schema.sql`、`004`、`008` |
+| `comments` | `reply_to_user_id`、`parent_id` 索引 | `full_schema.sql` 或 `003` |
+| `user_pets` | 用户唯一约束、品种索引 | `full_schema.sql` 或 `006` |
+| `email_verification_tokens`、`email_login_codes` | 邮箱激活与验证码登录 | `full_schema.sql` 或 `009`、`010` |
+| `notifications`、`check_ins`、`points_history` | 通知、签到、积分流水 | `full_schema.sql` |
 
 ### 建库建表
 

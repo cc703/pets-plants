@@ -20,13 +20,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Speech from 'expo-speech';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Spacing, BorderRadius, FontSize, Shadows, getAccentColor } from '../../src/utils/theme';
-import { getBreedById, breeds } from '../../src/data/breeds';
+import { fetchBreedById, fetchBreeds } from '../../src/services/breedService';
 import { useAuth } from '../../src/contexts/AuthContext';
 import PetIllustration from '../../src/components/PetIllustration';
 import OptimizedImage from '../../src/components/OptimizedImage';
 import { addBrowsingHistory } from '../../src/services/historyService';
 import { useRemoteAudioPlayer } from '../../src/hooks/useVoiceTools';
-import type { TemperamentKey } from '../../src/types';
+import type { Breed, TemperamentKey } from '../../src/types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CAT_VOICE = require('../../assets/audio/cat-meow.mp3');
@@ -101,7 +101,9 @@ export default function BreedDetailPage() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
-  const breed = getBreedById(id || '');
+  const [breed, setBreed] = useState<Breed | null>(null);
+  const [relatedSource, setRelatedSource] = useState<Breed[]>([]);
+  const [breedStatus, setBreedStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [liked, setLiked] = useState(false);
   const [favoriteCount, setFavoriteCount] = useState(128);
@@ -111,6 +113,33 @@ export default function BreedDetailPage() {
   const voiceKey = breed ? `${breed.species}-${breed.id}` : '';
   const voiceSource = breed?.voiceUrl || (breed?.species === 'cat' ? CAT_VOICE : DOG_VOICE);
   const isPlaying = !!breed && playingKey === voiceKey;
+
+  useEffect(() => {
+    if (!id) {
+      setBreed(null);
+      setBreedStatus('error');
+      return;
+    }
+
+    let active = true;
+    setBreedStatus('loading');
+    Promise.all([fetchBreedById(id), fetchBreeds({ page: 1, limit: 50 })])
+      .then(([detail, list]) => {
+        if (!active) return;
+        setBreed(detail);
+        setRelatedSource(list);
+        setBreedStatus('ready');
+      })
+      .catch(() => {
+        if (!active) return;
+        setBreed(null);
+        setBreedStatus('error');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [id]);
 
   // 播放品种声音
   const handlePlayVoice = useCallback(async () => {
@@ -137,7 +166,7 @@ export default function BreedDetailPage() {
 
   // 获取相关品种推荐（同物种的其他品种）
   const relatedBreeds = breed
-    ? breeds.filter((b) => b.species === breed.species && b.id !== breed.id).slice(0, 3)
+    ? relatedSource.filter((item) => item.species === breed.species && item.id !== breed.id).slice(0, 3)
     : [];
 
   const handleLike = useCallback(() => {
@@ -170,17 +199,6 @@ export default function BreedDetailPage() {
     [router]
   );
 
-  if (!breed) {
-    return (
-      <View style={styles.notFound}>
-        <Text style={styles.notFoundText}>品种未找到</Text>
-      </View>
-    );
-  }
-
-  const accentColor = getAccentColor(breed.species);
-  const galleryImages = breed.gallery?.length ? breed.gallery : [breed.imageUrl];
-
   useEffect(() => {
     if (!breed) return;
     addBrowsingHistory({
@@ -191,6 +209,17 @@ export default function BreedDetailPage() {
       icon: breed.species === 'cat' ? '🐱' : '🐶',
     }, user?.id).catch(() => {});
   }, [breed, user?.id]);
+
+  if (!breed) {
+    return (
+      <View style={styles.notFound}>
+        <Text style={styles.notFoundText}>{breedStatus === 'loading' ? '正在加载品种信息...' : '品种未找到或暂时无法加载'}</Text>
+      </View>
+    );
+  }
+
+  const accentColor = getAccentColor(breed.species);
+  const galleryImages = breed.gallery?.length ? breed.gallery : [breed.imageUrl];
 
   // 英雄区域视差
   const heroScale = scrollY.interpolate({ inputRange: [-100, 0], outputRange: [1.15, 1], extrapolate: 'clamp' });

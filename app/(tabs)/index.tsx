@@ -20,6 +20,7 @@ import { usePets } from '../../src/contexts/PetContext';
 import { getBreedById } from '../../src/data/breeds';
 import PetIllustration from '../../src/components/PetIllustration';
 import OptimizedImage from '../../src/components/OptimizedImage';
+import ComingSoonModal from '../../src/components/ComingSoonModal';
 import { aiService, type AIKnowledgeItem } from '../../src/services/aiService';
 
 // 今日知识数据
@@ -176,14 +177,18 @@ export default function HomePage() {
   const [currentKnowledgeIndex, setCurrentKnowledgeIndex] = useState(0);
   const [aiKnowledgeItems, setAiKnowledgeItems] = useState<AIKnowledgeItem[]>([]);
   const [isKnowledgeLoading, setIsKnowledgeLoading] = useState(false);
+  const [comingSoonVisible, setComingSoonVisible] = useState(false);
   const knowledgeFadeAnim = useRef(new Animated.Value(1)).current;
   const displayedKnowledgeItems = aiKnowledgeItems.length > 0 ? aiKnowledgeItems : knowledgeItems;
+  const handleComingSoon = useCallback(() => {
+    setComingSoonVisible(true);
+  }, []);
   const personaActions = [
     {
       icon: 'paw-outline' as const,
       title: '已养宠',
       desc: '记录日常、看健康知识',
-      route: '/(tabs)/community',
+      route: '/pet',
       color: Colors.primary,
     },
     {
@@ -196,8 +201,8 @@ export default function HomePage() {
     {
       icon: 'sparkles-outline' as const,
       title: '喜欢宠物',
-      desc: '云养宠、问 AI、逛社区',
-      route: '/(tabs)/pet',
+      desc: '云养宠功能正在开发中',
+      route: undefined,
       color: Colors.accent,
     },
   ];
@@ -262,6 +267,11 @@ export default function HomePage() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      <ComingSoonModal
+        visible={comingSoonVisible}
+        message="云养宠功能正在开发中，敬请期待。"
+        onClose={() => setComingSoonVisible(false)}
+      />
       <Animated.ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
@@ -339,9 +349,10 @@ export default function HomePage() {
               {personaActions.map((item) => (
                 <TouchableOpacity
                   key={item.title}
+                  testID={`home-persona-${item.title === '喜欢宠物' ? 'coming-soon' : item.title === '已养宠' ? 'owned-pet' : 'prepare-pet'}`}
                   style={styles.personaCard}
                   activeOpacity={0.8}
-                  onPress={() => router.push(item.route as any)}
+                  onPress={() => (item.route ? router.push(item.route as any) : handleComingSoon())}
                 >
                   <View style={[styles.personaIconWrap, { backgroundColor: item.color + '14' }]}>
                     <Ionicons name={item.icon} size={17} color={item.color} />
@@ -498,7 +509,7 @@ export default function HomePage() {
             </View>
           </View>
           {activePet ? (
-            <TouchableOpacity style={styles.petCard} activeOpacity={0.85} onPress={() => router.push('/(tabs)/pet')}>
+            <TouchableOpacity style={styles.petCard} activeOpacity={0.85} onPress={() => router.push('/pet')}>
               <LinearGradient
                 colors={[Colors.primary + '14', Colors.primaryLight + '06']}
                 style={styles.petAvatarBg}
@@ -540,7 +551,12 @@ export default function HomePage() {
               </View>
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity style={styles.petCard} activeOpacity={0.85} onPress={() => router.push('/(tabs)/pet')}>
+            <TouchableOpacity
+              testID="home-create-primary-pet"
+              style={styles.petCard}
+              activeOpacity={0.85}
+              onPress={() => router.push('/pet')}
+            >
               <LinearGradient
                 colors={[Colors.primary + '14', Colors.primaryLight + '06']}
                 style={styles.petAvatarBg}
@@ -548,8 +564,8 @@ export default function HomePage() {
                 <Ionicons name="add-circle-outline" size={40} color={Colors.primary} />
               </LinearGradient>
               <View style={styles.petInfo}>
-                <Text style={styles.petName}>还没有宠物</Text>
-                <Text style={styles.petBreed}>点击去领养一只虚拟宠物吧！</Text>
+                <Text style={styles.petName}>还没有主宠档案</Text>
+                <Text style={styles.petBreed}>去创建你的主宠档案</Text>
               </View>
             </TouchableOpacity>
           )}

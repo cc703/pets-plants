@@ -1,7 +1,8 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { authMiddleware, optionalAuth } = require('../middleware/auth');
-const { awardPoints } = require('./points');
+const { awardPoints, POINTS_RULES } = require('./points');
+const { createNotification } = require('../utils/notifications');
 
 const router = express.Router();
 
@@ -156,6 +157,7 @@ router.get('/posts/:postId/comments', optionalAuth, async (req, res) => {
  * Create a comment on a post
  */
 router.post('/posts/:postId/comments', authMiddleware, async (req, res) => {
+  let connection;
   try {
     const postId = req.params.postId;
     const { content, parentId } = req.body;
@@ -166,46 +168,65 @@ router.post('/posts/:postId/comments', authMiddleware, async (req, res) => {
     }
 
     // Check post exists
-    const [posts] = await req.app.locals.pool.execute(
-      "SELECT id FROM posts WHERE id = ? AND status = 'published'",
+    connection = await req.app.locals.pool.getConnection();
+    await connection.beginTransaction();
+
+    const [posts] = await connection.execute(
+      "SELECT id, user_id, stats FROM posts WHERE id = ? AND status = 'published' FOR UPDATE",
       [postId]
     );
     if (posts.length === 0) {
+      await connection.rollback();
       return res.status(404).json({ code: 1004, message: '帖子不存在' });
     }
 
     // Validate parent comment if replying
+    let notificationRecipientId = posts[0].user_id;
     if (parentId) {
-      const [parents] = await req.app.locals.pool.execute(
-        "SELECT id FROM comments WHERE id = ? AND post_id = ? AND status = 'visible'",
+      const [parents] = await connection.execute(
+        "SELECT id, user_id FROM comments WHERE id = ? AND post_id = ? AND status = 'visible' FOR UPDATE",
         [parentId, postId]
       );
       if (parents.length === 0) {
+        await connection.rollback();
         return res.status(404).json({ code: 1004, message: '父评论不存在' });
       }
+      notificationRecipientId = parents[0].user_id;
     }
 
     const commentId = uuidv4();
-    await req.app.locals.pool.execute(
+    await connection.execute(
       `INSERT INTO comments (id, post_id, user_id, parent_id, content, likes_count, status)
        VALUES (?, ?, ?, ?, ?, 0, 'visible')`,
       [commentId, postId, req.user.id, parentId || null, content]
     );
 
     // Update post comments count
-    const [postStats] = await req.app.locals.pool.execute(
-      'SELECT stats FROM posts WHERE id = ?',
-      [postId]
-    );
-    const stats = typeof postStats[0].stats === 'string' ? JSON.parse(postStats[0].stats) : postStats[0].stats;
+    const stats = typeof posts[0].stats === 'string' ? JSON.parse(posts[0].stats) : posts[0].stats;
     stats.commentsCount = (stats.commentsCount || 0) + 1;
-    await req.app.locals.pool.execute(
+    await connection.execute(
       'UPDATE posts SET stats = ? WHERE id = ?',
       [JSON.stringify(stats), postId]
     );
 
     // Award points for commenting
-    await awardPoints(req.app.locals.pool, req.user.id, 2, 'comment', '发表评论', commentId);
+    await awardPoints(
+      connection,
+      req.user.id,
+      POINTS_RULES.comment_create,
+      'comment',
+      '发表评论',
+      commentId
+    );
+    await createNotification(connection, {
+      userId: notificationRecipientId,
+      fromUserId: req.user.id,
+      type: parentId ? 'reply' : 'comment',
+      targetType: 'post',
+      targetId: postId,
+      content: parentId ? '回复了你的评论' : '评论了你的帖子',
+    });
+    await connection.commit();
 
     // Fetch and return
     const [rows] = await req.app.locals.pool.execute(
@@ -218,8 +239,11 @@ router.post('/posts/:postId/comments', authMiddleware, async (req, res) => {
 
     return res.status(201).json({ code: 0, data: comment });
   } catch (error) {
+    if (connection) await connection.rollback();
     console.error('Create comment error:', error);
     return res.status(500).json({ code: 5000, message: '服务器内部错误' });
+  } finally {
+    connection?.release();
   }
 });
 

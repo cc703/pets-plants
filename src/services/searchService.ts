@@ -24,6 +24,8 @@ export interface SearchParams {
   filters?: SearchFilters;
   /** 排序方式 */
   sortBy?: SortBy;
+  /** 可选搜索数据源；默认静态数据保持旧页面兼容 */
+  source?: Breed[];
 }
 
 /** 全部可用的体型选项 */
@@ -40,9 +42,9 @@ export const SPECIES_OPTIONS: { key: Species | 'all'; label: string }[] = [
 ];
 
 /** 获取所有适合人群选项 */
-export const getSuitableForOptions = (): string[] => {
+export const getSuitableForOptions = (source: Breed[] = breeds): string[] => {
   const set = new Set<string>();
-  breeds.forEach(b => b.suitableFor.forEach(s => set.add(s)));
+  source.forEach(b => b.suitableFor.forEach(s => set.add(s)));
   return Array.from(set).sort();
 };
 
@@ -59,10 +61,10 @@ export const HOT_SEARCHES = [
  * 支持中英文名称匹配、特征筛选、排序
  */
 export function searchBreeds(params: SearchParams): Breed[] {
-  const { query = '', filters = {}, sortBy = 'popularity' } = params;
+  const { query = '', filters = {}, sortBy = 'popularity', source = breeds } = params;
   const { species = 'all', sizes, coatLengths, suitableFor } = filters;
 
-  let results = [...breeds];
+  let results = [...source];
 
   // 1. 物种筛选
   if (species && species !== 'all') {
@@ -128,10 +130,10 @@ export function searchBreeds(params: SearchParams): Breed[] {
  * 快速搜索（用于实时搜索建议）
  * 只匹配名称，返回前 N 条
  */
-export function quickSearch(query: string, limit = 5): Breed[] {
+export function quickSearch(query: string, limit = 5, source: Breed[] = breeds): Breed[] {
   if (!query.trim()) return [];
   const q = query.toLowerCase().trim();
-  return breeds
+  return source
     .filter(
       b =>
         b.name.toLowerCase().includes(q) ||

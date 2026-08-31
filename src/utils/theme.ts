@@ -1,25 +1,25 @@
 import type { Species } from '../types';
 
-// 清新自然系配色方案
+// 温暖轻专业：自然绿承载照护感，珊瑚色承担提醒与行动强调。
 export const Colors = {
-  primary: '#6EC89B',      // 薄荷绿
-  primaryLight: '#A8E6CF', // 浅薄荷
-  primaryDark: '#4A9E75',  // 深薄荷
-  secondary: '#F4A261',    // 杏仁橘
-  secondaryLight: '#F8C89A',
-  accent: '#E76F51',       // 赤陶红
-  background: '#F0F7F4',   // 极淡薄荷
-  surface: '#FFFFFF',      // 纯白
+  primary: '#4F8A69',
+  primaryLight: '#E5F1E8',
+  primaryDark: '#35664A',
+  secondary: '#E6A15B',
+  secondaryLight: '#F5DDC3',
+  accent: '#E9876B',
+  background: '#F7F5EF',
+  surface: '#FFFEFB',
   card: '#FFFFFF',
-  text: '#1D3557',         // 深海蓝
-  textSecondary: '#6B7280',
-  textLight: '#9CA3AF',
-  border: '#E5E7EB',
-  success: '#4CD964',
-  warning: '#FF9500',
-  error: '#FF3B30',
-  shadow: 'rgba(0, 0, 0, 0.06)',
-  overlay: 'rgba(29, 53, 87, 0.4)',
+  text: '#263238',
+  textSecondary: '#66736C',
+  textLight: '#98A29C',
+  border: '#E4E6DF',
+  success: '#4F8A69',
+  warning: '#D98A3D',
+  error: '#D95F58',
+  shadow: 'rgba(38, 50, 56, 0.08)',
+  overlay: 'rgba(38, 50, 56, 0.42)',
 } as const;
 
 export const Spacing = {
@@ -53,21 +53,21 @@ export const FontSize = {
 // 统一阴影样式
 export const Shadows = {
   sm: {
-    shadowColor: '#1D3557',
+    shadowColor: '#263238',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04,
     shadowRadius: 4,
     elevation: 1,
   },
   md: {
-    shadowColor: '#1D3557',
+    shadowColor: '#263238',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 2,
   },
   lg: {
-    shadowColor: '#1D3557',
+    shadowColor: '#263238',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 16,

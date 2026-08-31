@@ -15,6 +15,7 @@ export default function RegisterPage() {
   const { register, status, error, clearError } = useAuth();
 
   const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [nickname, setNickname] = useState('');
@@ -38,18 +39,21 @@ export default function RegisterPage() {
 
     if (!username.trim()) { setLocalError('请输入用户名'); return; }
     if (!/^[a-zA-Z0-9_]{3,20}$/.test(username.trim())) { setLocalError('用户名需3-20位，仅限字母数字下划线'); return; }
+    if (!email.trim()) { setLocalError('请输入邮箱'); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setLocalError('邮箱格式不正确'); return; }
     if (!password) { setLocalError('请输入密码'); return; }
     if (password.length < 6) { setLocalError('密码至少6位'); return; }
     if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) { setLocalError('密码需包含字母和数字'); return; }
     if (password !== confirmPassword) { setLocalError('两次密码不一致'); return; }
 
     await register({
-      method: 'phone',
+      method: 'email',
       username: username.trim(),
+      email: email.trim().toLowerCase(),
       password,
       nickname: nickname.trim() || undefined,
     });
-  }, [username, password, confirmPassword, nickname, isLoading, register, clearError]);
+  }, [username, email, password, confirmPassword, nickname, isLoading, register, clearError]);
 
   const displayError = localError || error;
 
@@ -86,6 +90,23 @@ export default function RegisterPage() {
                 autoCapitalize="none"
                 autoCorrect={false}
                 maxLength={20}
+                returnKeyType="next"
+              />
+            </View>
+
+            <View style={styles.inputContainer}>
+              <Ionicons name="mail-outline" size={20} color={Colors.textLight} style={styles.inputIcon} />
+              <TextInput
+                testID="register-email-input"
+                style={styles.input}
+                placeholder="邮箱"
+                placeholderTextColor={Colors.textLight}
+                value={email}
+                onChangeText={(t) => { setEmail(t); setLocalError(''); clearError(); }}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+                maxLength={100}
                 returnKeyType="next"
               />
             </View>

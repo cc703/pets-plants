@@ -1,911 +1,386 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Animated,
-  Platform,
-  FlatList,
+  ActivityIndicator,
   Alert,
-  Dimensions,
+  Image,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Spacing, BorderRadius, FontSize, Shadows } from '../../src/utils/theme';
-import { breeds, getBreedById } from '../../src/data/breeds';
-import { usePets } from '../../src/contexts/PetContext';
 import PetIllustration from '../../src/components/PetIllustration';
-import OptimizedImage from '../../src/components/OptimizedImage';
-import type { Breed, Species, VirtualPet } from '../../src/types';
+import { useAuth } from '../../src/contexts/AuthContext';
+import { useUserPet } from '../../src/contexts/UserPetContext';
+import { fetchBreeds } from '../../src/services/breedService';
+import type { Breed } from '../../src/types';
+import type { UserPetSex } from '../../src/services/userPetService';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const useNativeDriver = Platform.OS !== 'web';
-
-// ---- 状态条颜色映射 ----
-const STAT_COLORS: Record<string, [string, string]> = {
-  health: ['#4CD964', '#6EE7A0'],
-  happiness: ['#F4A261', '#F8C89A'],
-  hunger: ['#FF9500', '#FFB84D'],
-  energy: ['#5AC8FA', '#8ADAFF'],
-  cleanliness: ['#5E5CE6', '#8B8AFF'],
-};
-
-const STAT_LABELS: Record<string, string> = {
-  health: '健康',
-  happiness: '快乐',
-  hunger: '饱腹',
-  energy: '精力',
-  cleanliness: '清洁',
-};
-
-const STAT_ICONS: Record<string, string> = {
-  health: 'heart',
-  happiness: 'happy',
-  hunger: 'restaurant',
-  energy: 'flash',
-  cleanliness: 'water',
-};
-
-// ---- 迷你状态条 ----
-
-const MiniStatBar = React.memo<{
-  label: string;
-  value: number;
-  colors: [string, string];
-  icon: string;
-  delay?: number;
-}>(({ label, value, colors, icon, delay = 0 }) => {
-  const animVal = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.timing(animVal, {
-      toValue: 1,
-      duration: 600,
-      delay,
-      useNativeDriver,
-    }).start();
-  }, []);
-
-  return (
-    <View style={miniStyles.row}>
-      <Ionicons name={icon as any} size={12} color={colors[0]} style={{ width: 16 }} />
-      <Text style={miniStyles.label}>{label}</Text>
-      <View style={miniStyles.bar}>
-        <Animated.View
-          style={[
-            miniStyles.fill,
-            {
-              width: animVal.interpolate({
-                inputRange: [0, 1],
-                outputRange: ['0%', `${value}%`],
-              }),
-            },
-          ]}
-        >
-          <LinearGradient
-            colors={colors}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={StyleSheet.absoluteFill}
-          />
-        </Animated.View>
-      </View>
-      <Text style={miniStyles.value}>{value}</Text>
-    </View>
-  );
-});
-
-const miniStyles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  label: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-    width: 30,
-  },
-  bar: {
-    flex: 1,
-    height: 5,
-    backgroundColor: Colors.border,
-    borderRadius: 3,
-    overflow: 'hidden',
-    marginHorizontal: 6,
-  },
-  fill: {
-    height: '100%',
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  value: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-    width: 26,
-    textAlign: 'right',
-  },
-});
-
-// ---- 宠物卡片 ----
-
-const PetCard = React.memo<{
-  pet: VirtualPet;
-  onPress: () => void;
-  onDelete: () => void;
-  delay?: number;
-}>(({ pet, onPress, onDelete, delay = 0 }) => {
-  const breed = getBreedById(pet.breedId);
-  const species = breed?.species ?? 'cat';
-  const accent = species === 'cat' ? Colors.primary : Colors.secondary;
-  const scaleAnim = useRef(new Animated.Value(0.95)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        delay,
-        tension: 50,
-        friction: 7,
-        useNativeDriver,
-      }),
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 400,
-        delay,
-        useNativeDriver,
-      }),
-    ]).start();
-  }, []);
-
-  return (
-    <Animated.View
-      style={[
-        cardStyles.wrapper,
-        { opacity: fadeAnim, transform: [{ scale: scaleAnim }] },
-      ]}
-    >
-      <TouchableOpacity activeOpacity={0.85} onPress={onPress} style={cardStyles.touch}>
-        <LinearGradient
-          colors={[accent + '0C', accent + '03', Colors.surface]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={cardStyles.card}
-        >
-          {/* 顶部：头像 + 名字 + 等级 */}
-          <View style={cardStyles.header}>
-            <View style={[cardStyles.avatar, { backgroundColor: accent + '15' }]}>
-              {breed?.imageUrl ? (
-                <OptimizedImage uri={breed.imageUrl} style={{ width: 56, height: 56 }} borderRadius={14} />
-              ) : (
-                <PetIllustration species={species} size={40} color={accent} />
-              )}
-            </View>
-            <View style={cardStyles.headerInfo}>
-              <View style={cardStyles.nameRow}>
-                <Text style={cardStyles.name} numberOfLines={1}>{pet.name}</Text>
-                <View style={[cardStyles.levelBadge, { backgroundColor: accent + '15' }]}>
-                  <Text style={[cardStyles.levelText, { color: accent }]}>Lv.{pet.level}</Text>
-                </View>
-              </View>
-              <Text style={cardStyles.breed}>{breed?.name ?? '未知品种'}</Text>
-              <View style={cardStyles.stageRow}>
-                <View style={[cardStyles.stageBadge, { backgroundColor: getStageColor(pet.stage) + '20' }]}>
-                  <Text style={[cardStyles.stageText, { color: getStageColor(pet.stage) }]}>
-                    {pet.stage}
-                  </Text>
-                </View>
-                <Text style={cardStyles.expText}>EXP {pet.experience}/{pet.level * 100}</Text>
-              </View>
-            </View>
-            <TouchableOpacity onPress={onDelete} style={cardStyles.deleteBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="close-circle" size={20} color={Colors.textLight} />
-            </TouchableOpacity>
-          </View>
-
-          {/* 状态条 */}
-          <View style={cardStyles.stats}>
-            {(['health', 'happiness', 'hunger', 'energy', 'cleanliness'] as const).map((key, i) => (
-              <MiniStatBar
-                key={key}
-                label={STAT_LABELS[key]}
-                value={pet[key]}
-                colors={STAT_COLORS[key]}
-                icon={STAT_ICONS[key]}
-                delay={delay + i * 60}
-              />
-            ))}
-          </View>
-
-          {/* 底部箭头 */}
-          <View style={cardStyles.footer}>
-            <Text style={[cardStyles.detailHint, { color: accent }]}>查看详情 & 互动</Text>
-            <Ionicons name="chevron-forward" size={14} color={accent} />
-          </View>
-        </LinearGradient>
-      </TouchableOpacity>
-    </Animated.View>
-  );
-});
-
-const cardStyles = StyleSheet.create({
-  wrapper: {
-    marginBottom: Spacing.md,
-  },
-  touch: {
-    borderRadius: BorderRadius.lg,
-    overflow: 'hidden',
-  },
-  card: {
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    ...Shadows.md,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
-  },
-  headerInfo: {
-    flex: 1,
-    marginLeft: Spacing.md,
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  name: {
-    fontSize: FontSize.lg,
-    fontWeight: '700',
-    color: Colors.text,
-    flexShrink: 1,
-  },
-  levelBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 6,
-  },
-  levelText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  breed: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    marginTop: 1,
-  },
-  stageRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 4,
-  },
-  stageBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 6,
-  },
-  stageText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  expText: {
-    fontSize: 10,
-    color: Colors.textLight,
-  },
-  deleteBtn: {
-    padding: 4,
-  },
-  stats: {
-    marginTop: Spacing.md,
-    paddingTop: Spacing.sm,
-    borderTopWidth: 0.5,
-    borderTopColor: Colors.border,
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: Spacing.sm,
-  },
-  detailHint: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-});
-
-// ---- 领养弹窗 ----
-
-const AdoptModal = React.memo<{
-  visible: boolean;
-  onClose: () => void;
-  onAdopt: (breedId: string) => void;
-}>(({ visible, onClose, onAdopt }) => {
-  const [filter, setFilter] = useState<Species | 'all'>('all');
-  const slideAnim = useRef(new Animated.Value(Dimensions.get('window').height)).current;
-
-  useEffect(() => {
-    if (visible) {
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        tension: 50,
-        friction: 9,
-        useNativeDriver,
-      }).start();
-    } else {
-      Animated.timing(slideAnim, {
-        toValue: Dimensions.get('window').height,
-        duration: 300,
-        useNativeDriver,
-      }).start();
-    }
-  }, [visible]);
-
-  const filtered = useMemo(() => {
-    if (filter === 'all') return breeds;
-    return breeds.filter(b => b.species === filter);
-  }, [filter]);
-
-  if (!visible) return null;
-
-  return (
-    <View style={adoptStyles.overlay}>
-      <TouchableOpacity style={adoptStyles.backdrop} activeOpacity={1} onPress={onClose} />
-      <Animated.View
-        style={[
-          adoptStyles.sheet,
-          { transform: [{ translateY: slideAnim }] },
-        ]}
-      >
-        <View style={adoptStyles.handle} />
-        <Text style={adoptStyles.title}>选择品种领养</Text>
-
-        {/* 筛选标签 */}
-        <View style={adoptStyles.filterRow}>
-          {[
-            { key: 'all', label: '全部' },
-            { key: 'cat', label: '猫咪' },
-            { key: 'dog', label: '狗狗' },
-          ].map(item => (
-            <TouchableOpacity
-              key={item.key}
-              style={[
-                adoptStyles.filterChip,
-                filter === item.key && adoptStyles.filterChipActive,
-              ]}
-              onPress={() => setFilter(item.key as any)}
-            >
-              <Text
-                style={[
-                  adoptStyles.filterText,
-                  filter === item.key && adoptStyles.filterTextActive,
-                ]}
-              >
-                {item.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <FlatList
-          data={filtered}
-          keyExtractor={item => item.id}
-          numColumns={3}
-          columnWrapperStyle={{ gap: Spacing.sm }}
-          contentContainerStyle={{ paddingBottom: 40 }}
-          showsVerticalScrollIndicator={false}
-          renderItem={({ item, index }) => {
-            const accent = item.species === 'cat' ? Colors.primary : Colors.secondary;
-            return (
-              <TouchableOpacity
-                style={adoptStyles.breedItem}
-                activeOpacity={0.75}
-                onPress={() => onAdopt(item.id)}
-              >
-                <View style={[adoptStyles.breedAvatar, { backgroundColor: accent + '12' }]}>
-                  {item.imageUrl ? (
-                    <OptimizedImage uri={item.imageUrl} style={{ width: 52, height: 52 }} borderRadius={12} />
-                  ) : (
-                    <PetIllustration species={item.species} size={36} color={accent} />
-                  )}
-                </View>
-                <Text style={adoptStyles.breedName} numberOfLines={1}>{item.name}</Text>
-                <Text style={adoptStyles.breedOrigin}>{item.originCountry}</Text>
-              </TouchableOpacity>
-            );
-          }}
-        />
-      </Animated.View>
-    </View>
-  );
-});
-
-const adoptStyles = StyleSheet.create({
-  overlay: {
-    ...StyleSheet.absoluteFill,
-    zIndex: 100,
-  },
-  backdrop: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: Colors.overlay,
-  },
-  sheet: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: Colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: Spacing.sm,
-    paddingHorizontal: Spacing.xl,
-    maxHeight: '80%',
-  },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.border,
-    alignSelf: 'center',
-    marginBottom: Spacing.md,
-  },
-  title: {
-    fontSize: FontSize.xl,
-    fontWeight: '700',
-    color: Colors.text,
-    marginBottom: Spacing.md,
-  },
-  filterRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
-  },
-  filterChip: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.background,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  filterChipActive: {
-    backgroundColor: Colors.primary + '15',
-    borderColor: Colors.primary,
-  },
-  filterText: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    fontWeight: '500',
-  },
-  filterTextActive: {
-    color: Colors.primary,
-  },
-  breedItem: {
-    flex: 1,
-    alignItems: 'center',
-    marginBottom: Spacing.lg,
-  },
-  breedAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
-    marginBottom: 6,
-  },
-  breedName: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.text,
-    textAlign: 'center',
-  },
-  breedOrigin: {
-    fontSize: 10,
-    color: Colors.textLight,
-    marginTop: 1,
-  },
-});
-
-// ---- 命名弹窗 ----
-
-const NameModal = React.memo<{
-  visible: boolean;
-  breedName: string;
-  onConfirm: (name: string) => void;
-  onCancel: () => void;
-}>(({ visible, breedName, onConfirm, onCancel }) => {
-  const [name, setName] = useState('');
-  const scaleAnim = useRef(new Animated.Value(0.9)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (visible) {
-      setName('');
-      Animated.parallel([
-        Animated.spring(scaleAnim, {
-          toValue: 1,
-          tension: 50,
-          friction: 7,
-          useNativeDriver,
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver,
-        }),
-      ]).start();
-    }
-  }, [visible]);
-
-  if (!visible) return null;
-
-  return (
-    <View style={nameStyles.overlay}>
-      <TouchableOpacity style={nameStyles.backdrop} activeOpacity={1} onPress={onCancel} />
-      <Animated.View
-        style={[
-          nameStyles.dialog,
-          { opacity: fadeAnim, transform: [{ scale: scaleAnim }] },
-        ]}
-      >
-        <Text style={nameStyles.title}>给你的{breedName}取个名字</Text>
-        <View style={nameStyles.inputWrap}>
-          <Text
-            style={[
-              nameStyles.input,
-              !name && nameStyles.placeholder,
-            ]}
-          >
-            {name || '请输入宠物名字...'}
-          </Text>
-        </View>
-        {/* 简易输入：用多个快捷名字按钮 */}
-        <View style={nameStyles.quickRow}>
-          {getQuickNames(breedName).map(n => (
-            <TouchableOpacity
-              key={n}
-              style={[nameStyles.quickChip, name === n && nameStyles.quickChipActive]}
-              onPress={() => setName(n)}
-            >
-              <Text style={[nameStyles.quickText, name === n && nameStyles.quickTextActive]}>{n}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        {/* 手动输入提示 */}
-        <View style={nameStyles.manualInputWrap}>
-          <TextInputSimple value={name} onChange={setName} placeholder="自定义名字..." />
-        </View>
-        <View style={nameStyles.btnRow}>
-          <TouchableOpacity style={nameStyles.cancelBtn} onPress={onCancel}>
-            <Text style={nameStyles.cancelText}>取消</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[nameStyles.confirmBtn, !name.trim() && nameStyles.confirmBtnDisabled]}
-            onPress={() => name.trim() && onConfirm(name.trim())}
-            disabled={!name.trim()}
-          >
-            <Text style={nameStyles.confirmText}>领养</Text>
-          </TouchableOpacity>
-        </View>
-      </Animated.View>
-    </View>
-  );
-});
-
-/** 超简易文本输入（RN web 兼容） */
-function TextInputSimple({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
-  // 使用原生 TextInput
-  const { TextInput } = require('react-native');
-  return (
-    <TextInput
-      style={nameStyles.textInput}
-      value={value}
-      onChangeText={onChange}
-      placeholder={placeholder}
-      placeholderTextColor={Colors.textLight}
-      maxLength={12}
-      autoFocus
-    />
-  );
-}
-
-function getQuickNames(breedName: string): string[] {
-  const pool = ['小宝', '豆豆', '球球', '团团', '毛毛', '糯米', '奶茶', '布丁', '花花', '皮蛋', '旺财', '大橘'];
-  const shuffled = [...pool].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, 4);
-}
-
-const nameStyles = StyleSheet.create({
-  overlay: {
-    ...StyleSheet.absoluteFill,
-    zIndex: 200,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  backdrop: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: Colors.overlay,
-  },
-  dialog: {
-    width: SCREEN_WIDTH - 60,
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.xl,
-    ...Shadows.lg,
-  },
-  title: {
-    fontSize: FontSize.lg,
-    fontWeight: '700',
-    color: Colors.text,
-    textAlign: 'center',
-    marginBottom: Spacing.lg,
-  },
-  inputWrap: {
-    backgroundColor: Colors.background,
-    borderRadius: BorderRadius.md,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    marginBottom: Spacing.md,
-  },
-  input: {
-    fontSize: FontSize.lg,
-    color: Colors.text,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  placeholder: {
-    color: Colors.textLight,
-    fontWeight: '400',
-  },
-  quickRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: Spacing.md,
-  },
-  quickChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.background,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  quickChipActive: {
-    backgroundColor: Colors.primary + '15',
-    borderColor: Colors.primary,
-  },
-  quickText: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-  },
-  quickTextActive: {
-    color: Colors.primary,
-    fontWeight: '600',
-  },
-  manualInputWrap: {
-    marginBottom: Spacing.lg,
-  },
-  textInput: {
-    backgroundColor: Colors.background,
-    borderRadius: BorderRadius.md,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    fontSize: FontSize.md,
-    color: Colors.text,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  btnRow: {
-    flexDirection: 'row',
-    gap: Spacing.md,
-  },
-  cancelBtn: {
-    flex: 1,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.xl,
-    backgroundColor: Colors.background,
-    alignItems: 'center',
-  },
-  cancelText: {
-    fontSize: FontSize.md,
-    color: Colors.textSecondary,
-    fontWeight: '600',
-  },
-  confirmBtn: {
-    flex: 1,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.xl,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-  },
-  confirmBtnDisabled: {
-    opacity: 0.5,
-  },
-  confirmText: {
-    fontSize: FontSize.md,
-    color: '#fff',
-    fontWeight: '700',
-  },
-});
-
-// ---- 阶段颜色 ----
-
-function getStageColor(stage: VirtualPet['stage']): string {
-  switch (stage) {
-    case '幼年':
-      return '#5AC8FA';
-    case '成年':
-      return Colors.primary;
-    case '老年':
-      return '#9B5DE5';
-  }
-}
-
-// ---- 主页面 ----
+const SERVICE_ERROR = '暂时无法连接服务，请稍后重试';
+const sexOptions: { value: UserPetSex; label: string }[] = [
+  { value: 'unknown', label: '未知' },
+  { value: 'male', label: '男孩' },
+  { value: 'female', label: '女孩' },
+];
 
 export default function PetPage() {
   const router = useRouter();
-  const { pets, loading, adoptNewPet, removePet, refreshPets, getBreedName } = usePets();
-  const [showAdopt, setShowAdopt] = useState(false);
-  const [selectedBreedId, setSelectedBreedId] = useState<string | null>(null);
-  const [showName, setShowName] = useState(false);
-  const headerFade = useRef(new Animated.Value(0)).current;
+  const { status: authStatus } = useAuth();
+  const { pet, status, error, refresh, save, remove } = useUserPet();
+  const [breeds, setBreeds] = useState<Breed[]>([]);
+  const [breedStatus, setBreedStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [breedId, setBreedId] = useState('');
+  const [name, setName] = useState('');
+  const [birthday, setBirthday] = useState('');
+  const [sex, setSex] = useState<UserPetSex>('unknown');
+  const [avatarUrl, setAvatarUrl] = useState('');
+
+  const selectedBreed = useMemo(
+    () => breeds.find((item) => item.id === breedId) ?? null,
+    [breeds, breedId],
+  );
+
+  const loadBreeds = useCallback(async () => {
+    setBreedStatus('loading');
+    try {
+      const data = await fetchBreeds({ page: 1, limit: 50 });
+      setBreeds(data);
+      setBreedStatus('ready');
+      setBreedId(current => current || data[0]?.id || '');
+    } catch {
+      setBreedStatus('error');
+    }
+  }, []);
 
   useEffect(() => {
-    Animated.timing(headerFade, {
-      toValue: 1,
-      duration: 500,
-      useNativeDriver,
-    }).start();
-  }, []);
-
-  // 选择品种后打开命名弹窗
-  const handleSelectBreed = useCallback((breedId: string) => {
-    setSelectedBreedId(breedId);
-    setShowAdopt(false);
-    setShowName(true);
-  }, []);
-
-  // 确认领养
-  const handleConfirmAdopt = useCallback(async (name: string) => {
-    if (!selectedBreedId) return;
-    await adoptNewPet(selectedBreedId, name);
-    setShowName(false);
-    setSelectedBreedId(null);
-  }, [selectedBreedId, adoptNewPet]);
-
-  // 删除宠物
-  const handleDelete = useCallback((pet: VirtualPet) => {
-    const breedName = getBreedName(pet.breedId);
-    if (Platform.OS === 'web') {
-      if (window.confirm(`确定要放生 ${pet.name}（${breedName}）吗？`)) {
-        removePet(pet.id);
-      }
+    if (authStatus === 'authenticated') {
+      loadBreeds();
     } else {
-      Alert.alert('放生宠物', `确定要放生 ${pet.name}（${breedName}）吗？`, [
-        { text: '取消', style: 'cancel' },
-        { text: '确定', style: 'destructive', onPress: () => removePet(pet.id) },
-      ]);
+      setBreeds([]);
+      setBreedStatus('idle');
+      setIsEditing(false);
     }
-  }, [getBreedName, removePet]);
+  }, [authStatus, loadBreeds]);
 
-  const selectedBreed = selectedBreedId ? getBreedById(selectedBreedId) : null;
+  useEffect(() => {
+    if (pet) {
+      setBreedId(pet.breedId);
+      setName(pet.name);
+      setBirthday(pet.birthday ?? '');
+      setSex(pet.sex);
+      setAvatarUrl(pet.avatarUrl ?? '');
+      setIsEditing(false);
+    } else if (!isEditing) {
+      setName('');
+      setBirthday('');
+      setSex('unknown');
+      setAvatarUrl('');
+    }
+  }, [pet, isEditing]);
+
+  const handleRetry = useCallback(async () => {
+    await Promise.all([
+      refresh().catch(() => undefined),
+      loadBreeds().catch(() => undefined),
+    ]);
+  }, [loadBreeds, refresh]);
+
+  const handleSave = useCallback(async () => {
+    const trimmedName = name.trim();
+    const trimmedBirthday = birthday.trim();
+
+    if (!breedId) {
+      setFormError('请选择品种');
+      return;
+    }
+    if (!trimmedName) {
+      setFormError('请填写宠物昵称');
+      return;
+    }
+    if (trimmedBirthday && !/^\d{4}-\d{2}-\d{2}$/.test(trimmedBirthday)) {
+      setFormError('生日格式应为 YYYY-MM-DD');
+      return;
+    }
+
+    setFormError(null);
+    setIsSaving(true);
+    try {
+      await save({
+        breedId,
+        name: trimmedName,
+        birthday: trimmedBirthday || null,
+        sex,
+        avatarUrl: avatarUrl.trim() || null,
+      });
+      setIsEditing(false);
+    } catch {
+      setFormError(SERVICE_ERROR);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [avatarUrl, birthday, breedId, name, save, sex]);
+
+  const handleDelete = useCallback(() => {
+    const action = async () => {
+      setIsSaving(true);
+      try {
+        await remove();
+        setName('');
+        setBirthday('');
+        setSex('unknown');
+        setAvatarUrl('');
+      } catch {
+        setFormError(SERVICE_ERROR);
+      } finally {
+        setIsSaving(false);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm('确定删除主宠档案吗？')) {
+        action();
+      }
+      return;
+    }
+
+    Alert.alert('删除主宠档案', '删除后可重新创建新的主宠档案。', [
+      { text: '取消', style: 'cancel' },
+      { text: '删除', style: 'destructive', onPress: action },
+    ]);
+  }, [remove]);
+
+  if (authStatus === 'loading' || authStatus === 'idle') {
+    return <LoadingScreen />;
+  }
+
+  if (authStatus !== 'authenticated') {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.centerPane}>
+          <View style={styles.emptyIcon}>
+            <Ionicons name="person-circle-outline" size={56} color={Colors.primary} />
+          </View>
+          <Text style={styles.emptyTitle}>登录后管理主宠档案</Text>
+          <Text style={styles.emptyDesc}>主宠档案会保存到账号，用于个人中心和社区展示。</Text>
+          <TouchableOpacity style={styles.primaryBtn} onPress={() => router.push('/(auth)/login' as any)}>
+            <Text style={styles.primaryBtnText}>去登录</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (status === 'loading' || breedStatus === 'loading') {
+    return <LoadingScreen />;
+  }
+
+  if (status === 'error' || breedStatus === 'error') {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.centerPane}>
+          <Ionicons name="cloud-offline-outline" size={46} color={Colors.textLight} />
+          <Text style={styles.emptyTitle}>{error || SERVICE_ERROR}</Text>
+          <Text style={styles.emptyDesc}>请检查后端服务和网络连接后重试。</Text>
+          <TouchableOpacity testID="primary-pet-retry-btn" style={styles.primaryBtn} onPress={handleRetry}>
+            <Text style={styles.primaryBtnText}>重试</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const showForm = !pet || isEditing;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* 头部 */}
-      <Animated.View style={[styles.header, { opacity: headerFade }]}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.title}>我的宠物</Text>
-          <Text style={styles.subtitle}>
-            {pets.length > 0 ? `已领养 ${pets.length} 只宠物` : '领养你的第一只虚拟宠物'}
-          </Text>
-        </View>
-        <TouchableOpacity
-          style={styles.addBtn}
-          activeOpacity={0.75}
-          onPress={() => setShowAdopt(true)}
-        >
-          <Ionicons name="add" size={22} color="#fff" />
-          <Text style={styles.addBtnText}>领养</Text>
-        </TouchableOpacity>
-      </Animated.View>
-
-      {/* 内容区 */}
-      {loading ? (
-        <View style={styles.emptyWrap}>
-          <Text style={styles.emptyText}>加载中...</Text>
-        </View>
-      ) : pets.length === 0 ? (
-        // 空状态
-        <View style={styles.emptyWrap}>
-          <View style={styles.emptyIconWrap}>
-            <PetIllustration species="cat" size={80} color={Colors.primary} />
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.title}>我的主宠</Text>
+            <Text style={styles.subtitle}>真实宠物档案，用于日常闭环展示</Text>
           </View>
-          <Text style={styles.emptyTitle}>还没有宠物</Text>
-          <Text style={styles.emptyDesc}>领养一只可爱的虚拟宠物，照顾它一起成长吧！</Text>
-          <TouchableOpacity
-            style={styles.emptyBtn}
-            activeOpacity={0.8}
-            onPress={() => setShowAdopt(true)}
-          >
-            <Ionicons name="paw" size={18} color="#fff" />
-            <Text style={styles.emptyBtnText}>去领养</Text>
-          </TouchableOpacity>
+          {pet && !showForm && (
+            <TouchableOpacity style={styles.iconBtn} onPress={() => setIsEditing(true)}>
+              <Ionicons name="create-outline" size={20} color={Colors.primary} />
+            </TouchableOpacity>
+          )}
         </View>
-      ) : (
-        <ScrollView
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {pets.map((pet, index) => (
-            <PetCard
-              key={pet.id}
-              pet={pet}
-              delay={index * 80}
-              onPress={() => router.push(`/pet/${pet.id}`)}
-              onDelete={() => handleDelete(pet)}
+
+        {showForm ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>{pet ? '编辑主宠档案' : '创建主宠档案'}</Text>
+
+            <Text style={styles.label}>品种</Text>
+            {breeds.length === 0 ? (
+              <Text style={styles.mutedText}>当前数据库暂无品种数据</Text>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.breedScroller}>
+                {breeds.map((breed) => {
+                  const active = breed.id === breedId;
+                  return (
+                    <TouchableOpacity
+                      key={breed.id}
+                      testID={active ? 'primary-pet-create-breed' : undefined}
+                      style={[styles.breedChip, active && styles.breedChipActive]}
+                      onPress={() => setBreedId(breed.id)}
+                    >
+                      <Text style={[styles.breedChipText, active && styles.breedChipTextActive]}>
+                        {breed.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            <Text style={styles.label}>昵称</Text>
+            <TextInput
+              testID="primary-pet-name-input"
+              value={name}
+              onChangeText={setName}
+              placeholder="例如：小饭团"
+              placeholderTextColor={Colors.textLight}
+              maxLength={50}
+              style={styles.input}
             />
-          ))}
-          <View style={{ height: 100 }} />
-        </ScrollView>
-      )}
 
-      {/* 领养弹窗 */}
-      <AdoptModal
-        visible={showAdopt}
-        onClose={() => setShowAdopt(false)}
-        onAdopt={handleSelectBreed}
-      />
+            <Text style={styles.label}>生日</Text>
+            <TextInput
+              testID="primary-pet-birthday-input"
+              value={birthday}
+              onChangeText={setBirthday}
+              placeholder="YYYY-MM-DD，可不填"
+              placeholderTextColor={Colors.textLight}
+              style={styles.input}
+            />
 
-      {/* 命名弹窗 */}
-      <NameModal
-        visible={showName}
-        breedName={selectedBreed?.name ?? '宠物'}
-        onConfirm={handleConfirmAdopt}
-        onCancel={() => {
-          setShowName(false);
-          setSelectedBreedId(null);
-        }}
-      />
+            <Text style={styles.label}>头像链接</Text>
+            <TextInput
+              testID="primary-pet-avatar-input"
+              value={avatarUrl}
+              onChangeText={setAvatarUrl}
+              placeholder="可选，填写可访问的图片链接"
+              placeholderTextColor={Colors.textLight}
+              autoCapitalize="none"
+              keyboardType="url"
+              style={styles.input}
+            />
+
+            <Text style={styles.label}>性别</Text>
+            <View style={styles.sexRow}>
+              {sexOptions.map((option) => {
+                const active = sex === option.value;
+                return (
+                  <TouchableOpacity
+                    key={option.value}
+                    testID={option.value === 'male' ? 'primary-pet-sex-male' : undefined}
+                    style={[styles.sexBtn, active && styles.sexBtnActive]}
+                    onPress={() => setSex(option.value)}
+                  >
+                    <Text style={[styles.sexText, active && styles.sexTextActive]}>{option.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {formError && <Text style={styles.errorText}>{formError}</Text>}
+
+            <View style={styles.actionRow}>
+              {pet && (
+                <TouchableOpacity
+                  style={[styles.secondaryBtn, isSaving && styles.disabled]}
+                  disabled={isSaving}
+                  onPress={() => {
+                    setIsEditing(false);
+                    setFormError(null);
+                  }}
+                >
+                  <Text style={styles.secondaryBtnText}>取消</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                testID="primary-pet-save-btn"
+                style={[styles.primaryBtn, styles.actionBtn, (isSaving || breeds.length === 0) && styles.disabled]}
+                disabled={isSaving || breeds.length === 0}
+                onPress={handleSave}
+              >
+                <Text style={styles.primaryBtnText}>{isSaving ? '保存中...' : '保存档案'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.card}>
+            <View style={styles.petProfile}>
+              <View style={styles.avatar}>
+                {pet?.avatarUrl ? (
+                  <Image source={{ uri: pet.avatarUrl }} style={styles.avatarImage} />
+                ) : (
+                  <PetIllustration species={selectedBreed?.species ?? pet?.breed?.species ?? 'cat'} size={72} color={Colors.primary} />
+                )}
+              </View>
+              <View style={styles.petInfo}>
+                <Text style={styles.petName}>{pet?.name}</Text>
+                <Text style={styles.petMeta}>{selectedBreed?.name ?? pet?.breed?.name ?? '未知品种'}</Text>
+                <Text style={styles.petMeta}>{formatSex(pet?.sex)} · {pet?.birthday || '生日未填写'}</Text>
+              </View>
+            </View>
+
+            <View style={styles.summaryBox}>
+              <Text style={styles.summaryTitle}>闭环状态</Text>
+              <Text style={styles.summaryText}>主宠档案已保存，可在个人中心和后续社区身份展示中复用。</Text>
+            </View>
+
+            <TouchableOpacity style={styles.dangerBtn} disabled={isSaving} onPress={handleDelete}>
+              <Ionicons name="trash-outline" size={16} color={Colors.error} />
+              <Text style={styles.dangerText}>删除档案</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-// ---- 样式 ----
+function LoadingScreen() {
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <View style={styles.loadingPane}>
+        <ActivityIndicator size="small" color={Colors.primary} />
+        <Text style={styles.loadingText}>加载主宠档案...</Text>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+function formatSex(value?: UserPetSex) {
+  if (value === 'male') return '男孩';
+  if (value === 'female') return '女孩';
+  return '性别未知';
+}
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
   },
+  content: {
+    padding: Spacing.xl,
+    paddingBottom: 120,
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.lg,
-  },
-  headerLeft: {
-    flex: 1,
+    marginBottom: Spacing.lg,
   },
   title: {
     fontSize: FontSize.title,
@@ -915,71 +390,241 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: FontSize.sm,
     color: Colors.textSecondary,
-    marginTop: 2,
+    marginTop: 4,
   },
-  addBtn: {
-    flexDirection: 'row',
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.surface,
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: Colors.primary,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm + 2,
-    borderRadius: BorderRadius.full,
+    ...Shadows.sm,
+  },
+  card: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
     ...Shadows.md,
   },
-  addBtnText: {
-    fontSize: FontSize.sm,
+  cardTitle: {
+    fontSize: FontSize.lg,
     fontWeight: '700',
-    color: '#fff',
+    color: Colors.text,
+    marginBottom: Spacing.lg,
   },
-  emptyWrap: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.xl,
-  },
-  emptyIconWrap: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: Colors.primary + '10',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: Spacing.xl,
-  },
-  emptyTitle: {
-    fontSize: FontSize.xl,
+  label: {
+    fontSize: FontSize.sm,
     fontWeight: '700',
     color: Colors.text,
     marginBottom: Spacing.sm,
+    marginTop: Spacing.md,
   },
-  emptyDesc: {
-    fontSize: FontSize.md,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: Spacing.xxl,
+  breedScroller: {
+    marginHorizontal: -Spacing.xs,
   },
-  emptyBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: Colors.primary,
-    paddingHorizontal: Spacing.xxxl,
-    paddingVertical: Spacing.md,
+  breedChip: {
+    marginHorizontal: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.full,
-    ...Shadows.md,
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
-  emptyBtnText: {
+  breedChipActive: {
+    backgroundColor: Colors.primary + '15',
+    borderColor: Colors.primary,
+  },
+  breedChipText: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    fontWeight: '600',
+  },
+  breedChipTextActive: {
+    color: Colors.primary,
+  },
+  input: {
+    minHeight: 44,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.background,
+    paddingHorizontal: Spacing.md,
+    fontSize: FontSize.md,
+    color: Colors.text,
+  },
+  sexRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  sexBtn: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  sexBtnActive: {
+    backgroundColor: Colors.primary + '15',
+    borderColor: Colors.primary,
+  },
+  sexText: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    fontWeight: '600',
+  },
+  sexTextActive: {
+    color: Colors.primary,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    marginTop: Spacing.xl,
+  },
+  actionBtn: {
+    flex: 1,
+  },
+  primaryBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.xl,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+  },
+  primaryBtnText: {
+    color: Colors.surface,
     fontSize: FontSize.md,
     fontWeight: '700',
-    color: '#fff',
   },
-  emptyText: {
-    fontSize: FontSize.md,
-    color: Colors.textSecondary,
-  },
-  listContent: {
+  secondaryBtn: {
+    flex: 1,
+    borderRadius: BorderRadius.xl,
     paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+    backgroundColor: Colors.background,
+  },
+  secondaryBtnText: {
+    color: Colors.textSecondary,
+    fontSize: FontSize.md,
+    fontWeight: '700',
+  },
+  disabled: {
+    opacity: 0.55,
+  },
+  errorText: {
+    color: Colors.error,
+    fontSize: FontSize.sm,
+    marginTop: Spacing.md,
+  },
+  mutedText: {
+    color: Colors.textSecondary,
+    fontSize: FontSize.sm,
+  },
+  petProfile: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatar: {
+    width: 92,
+    height: 92,
+    borderRadius: 24,
+    backgroundColor: Colors.primary + '12',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: 92,
+    height: 92,
+  },
+  petInfo: {
+    flex: 1,
+    marginLeft: Spacing.lg,
+  },
+  petName: {
+    fontSize: FontSize.xxl,
+    fontWeight: '800',
+    color: Colors.text,
+  },
+  petMeta: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    marginTop: 6,
+  },
+  summaryBox: {
+    marginTop: Spacing.xl,
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.background,
+  },
+  summaryTitle: {
+    fontSize: FontSize.sm,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  summaryText: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+    marginTop: 4,
+  },
+  dangerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+    marginTop: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.xl,
+    backgroundColor: Colors.error + '10',
+  },
+  dangerText: {
+    color: Colors.error,
+    fontSize: FontSize.sm,
+    fontWeight: '700',
+  },
+  centerPane: {
+    flex: 1,
+    minHeight: 360,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.xl,
+  },
+  emptyIcon: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: Colors.primary + '12',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: Spacing.lg,
+  },
+  emptyTitle: {
+    fontSize: FontSize.lg,
+    fontWeight: '700',
+    color: Colors.text,
+    textAlign: 'center',
+  },
+  emptyDesc: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.xl,
+  },
+  loadingPane: {
+    height: 360,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: Spacing.sm,
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
   },
 });

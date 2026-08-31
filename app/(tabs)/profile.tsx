@@ -1,22 +1,21 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Switch, Alert, ActivityIndicator,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Switch, Alert, ActivityIndicator, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Colors, Spacing, BorderRadius, FontSize, Shadows } from '../../src/utils/theme';
 import PetIllustration from '../../src/components/PetIllustration';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { requireLogin } from '../../src/utils/nav';
-import { usePets } from '../../src/contexts/PetContext';
-import { getBreedById } from '../../src/data/breeds';
+import { useUserPet } from '../../src/contexts/UserPetContext';
 import { getBrowsingHistory } from '../../src/services/historyService';
-import { pointsService } from '../../src/services/pointsService';
+import { pointsService, type PointsSummary } from '../../src/services/pointsService';
 import { getAchievements, getUserById, type Achievement } from '../../src/services/userService';
-import { getBookmarks } from '../../src/services/postService';
-import type { BookmarkItem, MenuItem } from '../../src/types';
+import { getBookmarks, getUserPosts } from '../../src/services/postService';
+import type { BookmarkItem, MenuItem, Post } from '../../src/types';
 import type { User } from '../../src/services/authApi';
 import type { UserBasic } from '../../src/types';
 interface FavoriteItem { id: string; type: 'post'; title: string; subtitle: string; icon: string; postId: string; }
@@ -40,6 +39,12 @@ function getDaysSince(createdAt?: string): number {
   if (isNaN(created.getTime())) return 1;
   const now = new Date();
   return Math.max(1, Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24)));
+}
+
+function getSexLabel(sex?: string | null): string {
+  if (sex === 'male') return '男孩';
+  if (sex === 'female') return '女孩';
+  return '未填写性别';
 }
 
 // ========== 未登录状态视图 ==========
@@ -132,7 +137,7 @@ function GuestProfile() {
 
 function UserProfile({ user, onLogout }: { user: User; onLogout: () => void }) {
   const router = useRouter();
-  const { activePet } = usePets();
+  const { pet: primaryPet, status: primaryPetStatus, error: primaryPetError, refresh: refreshPrimaryPet } = useUserPet();
   const { updatePreferences } = useAuth();
   const [showSettings, setShowSettings] = useState(false);
   const [showFavorites, setShowFavorites] = useState(false);
@@ -140,11 +145,18 @@ function UserProfile({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [darkModeEnabled, setDarkModeEnabled] = useState(false);
   const [autoPlayVideo, setAutoPlayVideo] = useState(true);
-  const [checkedIn, setCheckedIn] = useState(false);
-  const [streak, setStreak] = useState(0);
+  const [pointsSummary, setPointsSummary] = useState<PointsSummary | null>(null);
+  const [pointsError, setPointsError] = useState<string | null>(null);
+  const [pointsLoading, setPointsLoading] = useState(false);
   const [checkingIn, setCheckingIn] = useState(false);
   const [favoritePosts, setFavoritePosts] = useState<FavoriteItem[]>([]);
-  const [favoriteCount, setFavoriteCount] = useState(0);
+  const [favoriteCount, setFavoriteCount] = useState<number | null>(null);
+  const [favoritesError, setFavoritesError] = useState<string | null>(null);
+  const [favoritesLoading, setFavoritesLoading] = useState(false);
+  const [postCount, setPostCount] = useState<number | null>(null);
+  const [recentPosts, setRecentPosts] = useState<Post[]>([]);
+  const [postsError, setPostsError] = useState<string | null>(null);
+  const [postsLoading, setPostsLoading] = useState(false);
   const [profileStats, setProfileStats] = useState<UserBasic | null>(null);
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [historyCount, setHistoryCount] = useState(0);
@@ -157,10 +169,10 @@ function UserProfile({ user, onLogout }: { user: User; onLogout: () => void }) {
 
   const menuItems = menuItemsBase.map((item) => {
     if (item.action === 'favorites') {
-      return { ...item, count: favoriteCount > 0 ? String(favoriteCount) : '' };
+      return { ...item, count: favoriteCount !== null && favoriteCount > 0 ? String(favoriteCount) : favoritesLoading ? '...' : '' };
     }
     if (item.action === 'posts') {
-      return { ...item, count: profileStats ? String(profileStats.postCount) : '' };
+      return { ...item, count: postCount !== null ? String(postCount) : postsLoading ? '...' : '' };
     }
     if (item.action === 'message') {
       return { ...item, count: '' };
@@ -171,13 +183,24 @@ function UserProfile({ user, onLogout }: { user: User; onLogout: () => void }) {
     return item;
   });
 
-  // Load check-in status
-  useEffect(() => {
-    pointsService.getTodayStatus().then((status) => {
-      setCheckedIn(status.checkedIn);
-      setStreak(status.streak);
-    }).catch(() => {});
-    getBookmarks(1, 20).then((result) => {
+  const loadPointsSummary = useCallback(async () => {
+    setPointsLoading(true);
+    setPointsError(null);
+    try {
+      const summary = await pointsService.getSummary();
+      setPointsSummary(summary);
+    } catch {
+      setPointsError('积分数据加载失败');
+    } finally {
+      setPointsLoading(false);
+    }
+  }, []);
+
+  const loadFavorites = useCallback(async () => {
+    setFavoritesLoading(true);
+    setFavoritesError(null);
+    try {
+      const result = await getBookmarks(1, 20);
       const favorites = result.data.map((item) => ({
         id: item.id,
         type: 'post' as const,
@@ -188,10 +211,31 @@ function UserProfile({ user, onLogout }: { user: User; onLogout: () => void }) {
       }));
       setFavoritePosts(favorites);
       setFavoriteCount(result.total);
-    }).catch(() => {
-      setFavoritePosts([]);
-      setFavoriteCount(0);
-    });
+    } catch {
+      setFavoritesError('收藏数据加载失败');
+    } finally {
+      setFavoritesLoading(false);
+    }
+  }, []);
+
+  const loadUserPosts = useCallback(async () => {
+    setPostsLoading(true);
+    setPostsError(null);
+    try {
+      const result = await getUserPosts(user.id, 1, 10);
+      setPostCount(result.total);
+      setRecentPosts(result.data.slice(0, 3));
+    } catch {
+      setPostsError('发布数据加载失败');
+    } finally {
+      setPostsLoading(false);
+    }
+  }, [user.id]);
+
+  useEffect(() => {
+    loadPointsSummary();
+    loadFavorites();
+    loadUserPosts();
     getUserById(user.id).then((result) => {
       setProfileStats(result);
       return getAchievements(result);
@@ -202,26 +246,31 @@ function UserProfile({ user, onLogout }: { user: User; onLogout: () => void }) {
       setAchievements([]);
     });
     getBrowsingHistory(user.id).then((items) => setHistoryCount(items.length)).catch(() => setHistoryCount(0));
-  }, [user.id]);
+  }, [user.id, loadPointsSummary, loadFavorites, loadUserPosts]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadUserPosts();
+    }, [loadUserPosts]),
+  );
 
   const handleCheckIn = useCallback(async () => {
-    if (checkedIn || checkingIn) return;
+    if (pointsSummary?.checkedInToday || checkingIn) return;
     setCheckingIn(true);
     try {
       const result = await pointsService.checkIn();
-      setCheckedIn(true);
-      setStreak(result.streak);
+      await loadPointsSummary();
       Alert.alert('签到成功', result.message);
     } catch (err: any) {
       if (err?.code === 3001) {
-        setCheckedIn(true);
+        await loadPointsSummary();
       } else {
         Alert.alert('提示', '签到失败，请稍后重试');
       }
     } finally {
       setCheckingIn(false);
     }
-  }, [checkedIn, checkingIn]);
+  }, [pointsSummary?.checkedInToday, checkingIn, loadPointsSummary]);
 
   const handlePreferenceChange = async (
     key: 'notifications' | 'darkMode' | 'autoPlayVideo',
@@ -244,12 +293,17 @@ function UserProfile({ user, onLogout }: { user: User; onLogout: () => void }) {
     else if (action === 'notification') router.push('/(tabs)/notification');
     else if (action === 'quiz') router.push('/(tabs)/quiz');
     else if (action === 'shop') router.push('/points-shop');
-    else if (action === 'posts') router.push(`/user/${user.id}`);
+    else if (action === 'posts') router.push('/my-posts');
     else if (action === 'history') router.push('/browsing-history');
     else Alert.alert('提示', '功能即将上线，敬请期待！');
   }, [router, user.id]);
 
   const daysSince = getDaysSince(user.createdAt);
+  const checkedIn = Boolean(pointsSummary?.checkedInToday);
+  const streak = pointsSummary?.currentStreak ?? 0;
+  const currentPoints = pointsSummary?.points;
+  const petSpecies = primaryPet?.breed?.species === 'dog' ? 'dog' : 'cat';
+  const petBirthday = primaryPet?.birthday ? `生日 ${primaryPet.birthday}` : '生日未填写';
 
   return (
     <>
@@ -275,15 +329,27 @@ function UserProfile({ user, onLogout }: { user: User; onLogout: () => void }) {
 
         {/* 统计数据 */}
         <View style={styles.statsRow}>
-          <View style={styles.statItem}><Text style={styles.statValue}>{(user.points ?? 0).toLocaleString()}</Text><Text style={styles.statLabel}>金币</Text></View>
+          <View style={styles.statItem}>
+            <Text testID="profile-points-value" style={styles.statValue}>
+              {currentPoints !== undefined ? currentPoints.toLocaleString() : pointsLoading ? '...' : '--'}
+            </Text>
+            <Text style={styles.statLabel}>金币</Text>
+          </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}><Text style={styles.statValue}>Lv.{user.level ?? 1}</Text><Text style={styles.statLabel}>等级</Text></View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}><Text style={styles.statValue}>{getDaysSince(user.createdAt)}</Text><Text style={styles.statLabel}>注册天数</Text></View>
         </View>
+        {pointsError ? (
+          <TouchableOpacity testID="profile-data-retry" style={styles.dataRetry} onPress={loadPointsSummary}>
+            <Text style={styles.dataError}>{pointsError}</Text>
+            <Text style={styles.retryText}>重试</Text>
+          </TouchableOpacity>
+        ) : null}
 
         {/* 签到卡片 */}
         <TouchableOpacity
+          testID="profile-check-in-btn"
           style={[styles.checkInCard, checkedIn && styles.checkInCardDone]}
           activeOpacity={0.85}
           onPress={handleCheckIn}
@@ -316,15 +382,29 @@ function UserProfile({ user, onLogout }: { user: User; onLogout: () => void }) {
         {/* 我的宠物 */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>我的宠物</Text>
-          {activePet ? (
-            <TouchableOpacity style={styles.petCard} activeOpacity={0.85} onPress={() => router.push('/(tabs)/pet')}>
-              <View style={styles.petAvatar}><PetIllustration species={getBreedById(activePet.breedId)?.species || 'cat'} size={60} color={Colors.primary} /></View>
+          {primaryPetStatus === 'loading' && !primaryPet ? (
+            <View style={styles.petCard}>
+              <ActivityIndicator size="small" color={Colors.primary} />
               <View style={styles.petInfo}>
-                <Text style={styles.petName}>{activePet.name} · Lv.{activePet.growth.level}</Text>
-                <Text style={styles.petBreed}>{getBreedById(activePet.breedId)?.name || '未知品种'}</Text>
+                <Text style={styles.petName}>正在读取宠物档案</Text>
+                <Text style={styles.petBreed}>同步你的真实主宠信息</Text>
+              </View>
+            </View>
+          ) : primaryPet ? (
+            <TouchableOpacity style={styles.petCard} activeOpacity={0.85} onPress={() => router.push('/(tabs)/pet')}>
+              <View style={styles.petAvatar}>
+                {primaryPet.avatarUrl ? (
+                  <Image source={{ uri: primaryPet.avatarUrl }} style={styles.petAvatarImage} />
+                ) : (
+                  <PetIllustration species={petSpecies} size={60} color={Colors.primary} />
+                )}
+              </View>
+              <View style={styles.petInfo}>
+                <Text testID="profile-primary-pet-name" style={styles.petName}>{primaryPet.name}</Text>
+                <Text style={styles.petBreed}>{primaryPet.breed?.name || '未知品种'}</Text>
                 <View style={styles.petStats}>
-                  <View style={styles.petStatItem}><Ionicons name="heart" size={12} color={Colors.accent} /><Text style={styles.petStatText}>快乐 {activePet.stats.happiness}</Text></View>
-                  <View style={styles.petStatItem}><Ionicons name="fitness" size={12} color={Colors.primary} /><Text style={styles.petStatText}>健康 {activePet.stats.health}</Text></View>
+                  <View style={styles.petStatItem}><Ionicons name="male-female" size={12} color={Colors.accent} /><Text style={styles.petStatText}>{getSexLabel(primaryPet.sex)}</Text></View>
+                  <View style={styles.petStatItem}><Ionicons name="calendar-outline" size={12} color={Colors.primary} /><Text style={styles.petStatText}>{petBirthday}</Text></View>
                 </View>
               </View>
               <TouchableOpacity style={styles.enterBtn} onPress={() => router.push('/(tabs)/pet')}><Text style={styles.enterBtnText}>进入</Text></TouchableOpacity>
@@ -334,9 +414,45 @@ function UserProfile({ user, onLogout }: { user: User; onLogout: () => void }) {
               <View style={styles.petAvatar}><Ionicons name="add-circle-outline" size={40} color={Colors.primary} /></View>
               <View style={styles.petInfo}>
                 <Text style={styles.petName}>还没有宠物</Text>
-                <Text style={styles.petBreed}>点击去领养一只虚拟宠物吧！</Text>
+                <Text style={styles.petBreed}>{primaryPetError || '去创建你的真实主宠档案'}</Text>
               </View>
+              {primaryPetError ? (
+                <TouchableOpacity style={styles.enterBtn} onPress={() => refreshPrimaryPet().catch(() => undefined)}><Text style={styles.enterBtnText}>重试</Text></TouchableOpacity>
+              ) : null}
             </TouchableOpacity>
+          )}
+        </View>
+        {(favoritesError || postsError) ? (
+          <View style={styles.section}>
+            {favoritesError ? (
+              <TouchableOpacity style={styles.inlineRetry} onPress={loadFavorites}>
+                <Text style={styles.dataError}>{favoritesError}</Text>
+                <Text style={styles.retryText}>重试</Text>
+              </TouchableOpacity>
+            ) : null}
+            {postsError ? (
+              <TouchableOpacity style={styles.inlineRetry} onPress={loadUserPosts}>
+                <Text style={styles.dataError}>{postsError}</Text>
+                <Text style={styles.retryText}>重试</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        ) : null}
+
+        <View style={styles.section}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>最近发布</Text>
+            <TouchableOpacity onPress={() => router.push('/my-posts')}><Text style={styles.seeAll}>查看全部</Text></TouchableOpacity>
+          </View>
+          {recentPosts.length > 0 ? recentPosts.map((post) => (
+            <TouchableOpacity key={post.id} style={styles.recentPostItem} onPress={() => router.push(`/post/${post.id}`)}>
+              <Text numberOfLines={1} style={styles.recentPostContent}>{post.content}</Text>
+              <Text style={styles.recentPostMeta}>{post.tags.length > 0 ? `#${post.tags.join(' #')}` : '社区帖子'}</Text>
+            </TouchableOpacity>
+          )) : postsLoading ? (
+            <Text style={styles.emptySectionText}>正在加载发布记录...</Text>
+          ) : postsError ? null : (
+            <Text style={styles.emptySectionText}>还没有发布内容</Text>
           )}
         </View>
 
@@ -446,7 +562,7 @@ function UserProfile({ user, onLogout }: { user: User; onLogout: () => void }) {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>我的收藏</Text>
-              <TouchableOpacity onPress={() => setShowFavorites(false)}><Ionicons name="close" size={24} color={Colors.text} /></TouchableOpacity>
+            <TouchableOpacity testID="profile-favorites-close" onPress={() => setShowFavorites(false)}><Ionicons name="close" size={24} color={Colors.text} /></TouchableOpacity>
             </View>
             <ScrollView style={styles.favoritesList}>
               {favoritePosts.map((item) => (
@@ -653,6 +769,7 @@ const styles = StyleSheet.create({
   seeAll: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: '500' },
   petCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, padding: Spacing.lg, ...Shadows.md },
   petAvatar: { marginRight: Spacing.md },
+  petAvatarImage: { width: 60, height: 60, borderRadius: 30, backgroundColor: Colors.background },
   petInfo: { flex: 1 },
   petName: { fontSize: FontSize.md, fontWeight: '600', color: Colors.text },
   petBreed: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2 },
@@ -661,6 +778,14 @@ const styles = StyleSheet.create({
   petStatText: { fontSize: FontSize.xs, color: Colors.textSecondary },
   enterBtn: { backgroundColor: Colors.primary, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, borderRadius: BorderRadius.xl },
   enterBtnText: { fontSize: FontSize.sm, color: Colors.surface, fontWeight: '600' },
+  dataRetry: { marginHorizontal: Spacing.xl, marginTop: Spacing.sm, backgroundColor: Colors.error + '08', borderRadius: BorderRadius.md, padding: Spacing.md, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  inlineRetry: { backgroundColor: Colors.error + '08', borderRadius: BorderRadius.md, padding: Spacing.md, marginBottom: Spacing.sm, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  dataError: { flex: 1, fontSize: FontSize.sm, color: Colors.error },
+  retryText: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: '600', marginLeft: Spacing.md },
+  recentPostItem: { backgroundColor: Colors.surface, borderRadius: BorderRadius.md, padding: Spacing.md, marginBottom: Spacing.sm, ...Shadows.sm },
+  recentPostContent: { fontSize: FontSize.sm, color: Colors.text, fontWeight: '500' },
+  recentPostMeta: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 4 },
+  emptySectionText: { fontSize: FontSize.sm, color: Colors.textSecondary, paddingVertical: Spacing.md, textAlign: 'center' },
   menuItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, borderRadius: BorderRadius.md, padding: Spacing.md, marginBottom: Spacing.sm, ...Shadows.sm },
   menuIcon: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginRight: Spacing.md },
   menuLabel: { flex: 1, fontSize: FontSize.md, color: Colors.text },

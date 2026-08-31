@@ -151,6 +151,7 @@ export default function NotificationScreen() {
 
     return (
       <TouchableOpacity
+        testID={`notification-item-${item.id}`}
         style={[styles.notificationItem, !item.isRead && styles.unreadItem]}
         onPress={() => handlePressNotification(item)}
         activeOpacity={0.7}

@@ -37,5 +37,38 @@ CREATE TABLE IF NOT EXISTS follows (
 -- =============================================
 -- 3. Add reply_to_user_id to comments table
 -- =============================================
-ALTER TABLE comments ADD COLUMN reply_to_user_id VARCHAR(36) AFTER parent_id;
-ALTER TABLE comments ADD INDEX idx_parent (parent_id);
+SET @comments_reply_to_user_id_exists := (
+  SELECT COUNT(*)
+  FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'comments'
+    AND COLUMN_NAME = 'reply_to_user_id'
+);
+SET @add_comments_reply_to_user_id_sql := IF(
+  @comments_reply_to_user_id_exists = 0,
+  'ALTER TABLE comments ADD COLUMN reply_to_user_id VARCHAR(36) AFTER parent_id',
+  'SELECT 1'
+);
+PREPARE add_comments_reply_to_user_id FROM @add_comments_reply_to_user_id_sql;
+EXECUTE add_comments_reply_to_user_id;
+DEALLOCATE PREPARE add_comments_reply_to_user_id;
+
+-- Older full schemas used idx_parent. Reuse any existing parent_id index and
+-- only create the named index when no usable parent index exists.
+SET @comments_parent_index_exists := (
+  SELECT COUNT(*)
+  FROM INFORMATION_SCHEMA.STATISTICS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'comments'
+    AND COLUMN_NAME = 'parent_id'
+    AND SEQ_IN_INDEX = 1
+    AND NON_UNIQUE = 1
+);
+SET @add_comments_parent_index_sql := IF(
+  @comments_parent_index_exists = 0,
+  'ALTER TABLE comments ADD INDEX idx_comments_parent (parent_id)',
+  'SELECT 1'
+);
+PREPARE add_comments_parent_index FROM @add_comments_parent_index_sql;
+EXECUTE add_comments_parent_index;
+DEALLOCATE PREPARE add_comments_parent_index;

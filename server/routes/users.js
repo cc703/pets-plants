@@ -1,36 +1,26 @@
 const express = require('express');
-const multer = require('multer');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { authMiddleware, optionalAuth } = require('../middleware/auth');
+const { createNotification } = require('../utils/notifications');
+const { createRateLimit } = require('../middleware/rateLimit');
+const {
+  createImageUpload,
+  persistImage,
+  removeImage,
+} = require('../services/uploadService');
 
 const router = express.Router();
 const uploadDir = process.env.UPLOAD_DIR
   ? path.resolve(process.env.UPLOAD_DIR)
   : path.join(__dirname, '..', 'uploads');
 
-// Configure multer for avatar uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `avatar_${req.user.id}_${Date.now()}${ext}`);
-  },
-});
-
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-  fileFilter: (req, file, cb) => {
-    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
-    if (allowed.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('仅支持 jpg/png/webp 格式'));
-    }
-  },
+const upload = createImageUpload();
+const uploadRateLimit = createRateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  keyPrefix: 'upload',
+  keyGenerator: (req) => `${req.ip || 'unknown'}:${req.user?.id || 'anonymous'}`,
 });
 
 function ensureJsonObject(value, fallback) {
@@ -347,13 +337,15 @@ router.patch('/me/preferences', authMiddleware, async (req, res) => {
  * POST /api/users/me/avatar
  * Upload avatar image
  */
-router.post('/me/avatar', authMiddleware, upload.single('file'), async (req, res) => {
+router.post('/me/avatar', authMiddleware, uploadRateLimit, upload.single('file'), async (req, res) => {
+  let savedFile;
   try {
     if (!req.file) {
       return res.status(400).json({ code: 1001, message: '请选择图片文件' });
     }
 
-    const avatarUrl = `/uploads/${req.file.filename}`;
+    savedFile = await persistImage(req.file, uploadDir, `avatar_${req.user.id}`);
+    const avatarUrl = savedFile.url;
 
     await req.app.locals.pool.execute(
       'UPDATE users SET avatar_url = ? WHERE id = ?',
@@ -362,22 +354,25 @@ router.post('/me/avatar', authMiddleware, upload.single('file'), async (req, res
 
     return res.json({ code: 0, data: { avatarUrl } });
   } catch (error) {
+    if (savedFile) await removeImage(savedFile.path);
     console.error('Upload avatar error:', error);
-    return res.status(500).json({ code: 5000, message: '服务器内部错误' });
+    return res.status(error.status || 500).json({ code: error.status ? 'INVALID_IMAGE_CONTENT' : 5000, message: error.status ? error.message : '服务器内部错误' });
   }
 });
 
-router.post('/upload/image', authMiddleware, upload.single('file'), async (req, res) => {
+router.post('/upload/image', authMiddleware, uploadRateLimit, upload.single('file'), async (req, res) => {
+  let savedFile;
   try {
     if (!req.file) {
       return res.status(400).json({ code: 1001, message: '请选择图片文件' });
     }
 
-    const url = `/uploads/${req.file.filename}`;
-    return res.json({ code: 0, data: { url } });
+    savedFile = await persistImage(req.file, uploadDir, `image_${req.user.id}`);
+    return res.json({ code: 0, data: { url: savedFile.url } });
   } catch (error) {
+    if (savedFile) await removeImage(savedFile.path);
     console.error('Upload image error:', error);
-    return res.status(500).json({ code: 5000, message: '服务器内部错误' });
+    return res.status(error.status || 500).json({ code: error.status ? 'INVALID_IMAGE_CONTENT' : 5000, message: error.status ? error.message : '服务器内部错误' });
   }
 });
 
@@ -390,8 +385,8 @@ router.put('/me/password', authMiddleware, async (req, res) => {
     const bcrypt = require('bcryptjs');
     const { oldPassword, newPassword } = req.body;
 
-    if (!oldPassword || !newPassword) {
-      return res.status(400).json({ code: 1001, message: '旧密码和新密码为必填项' });
+    if (!newPassword) {
+      return res.status(400).json({ code: 1001, message: '新密码为必填项' });
     }
 
     if (newPassword.length < 6 || newPassword.length > 32) {
@@ -408,9 +403,14 @@ router.put('/me/password', authMiddleware, async (req, res) => {
       [req.user.id]
     );
 
-    const isValid = await bcrypt.compare(oldPassword, users[0].password_hash);
-    if (!isValid) {
-      return res.status(401).json({ code: 2003, message: '旧密码不正确' });
+    if (users[0].password_hash) {
+      if (!oldPassword) {
+        return res.status(400).json({ code: 1001, message: '旧密码为必填项' });
+      }
+      const isValid = await bcrypt.compare(oldPassword, users[0].password_hash);
+      if (!isValid) {
+        return res.status(401).json({ code: 2003, message: '旧密码不正确' });
+      }
     }
 
     const newHash = await bcrypt.hash(newPassword, 10);
@@ -437,6 +437,7 @@ router.put('/me/password', authMiddleware, async (req, res) => {
  * Follow a user
  */
 router.post('/:id/follow', authMiddleware, async (req, res) => {
+  let connection;
   try {
     const targetId = req.params.id;
 
@@ -445,30 +446,35 @@ router.post('/:id/follow', authMiddleware, async (req, res) => {
     }
 
     // Check target exists
-    const [targets] = await req.app.locals.pool.execute(
+    connection = await req.app.locals.pool.getConnection();
+    await connection.beginTransaction();
+
+    const [targets] = await connection.execute(
       'SELECT id FROM users WHERE id = ? AND status != ?',
       [targetId, 'banned']
     );
     if (targets.length === 0) {
+      await connection.rollback();
       return res.status(404).json({ code: 1004, message: '用户不存在' });
     }
 
     // Check if already following
-    const [existing] = await req.app.locals.pool.execute(
+    const [existing] = await connection.execute(
       'SELECT id FROM follows WHERE follower_id = ? AND following_id = ?',
       [req.user.id, targetId]
     );
 
     if (existing.length > 0) {
       // Already following, unfollow
-      await req.app.locals.pool.execute(
+      await connection.execute(
         'DELETE FROM follows WHERE follower_id = ? AND following_id = ?',
         [req.user.id, targetId]
       );
-      const [updated] = await req.app.locals.pool.execute(
+      const [updated] = await connection.execute(
         'SELECT COUNT(*) AS total FROM follows WHERE following_id = ?',
         [targetId]
       );
+      await connection.commit();
 
       return res.json({
         code: 0,
@@ -478,22 +484,34 @@ router.post('/:id/follow', authMiddleware, async (req, res) => {
 
     // Create follow
     const followId = uuidv4();
-    await req.app.locals.pool.execute(
+    await connection.execute(
       'INSERT INTO follows (id, follower_id, following_id) VALUES (?, ?, ?)',
       [followId, req.user.id, targetId]
     );
-    const [updated] = await req.app.locals.pool.execute(
+    const [updated] = await connection.execute(
       'SELECT COUNT(*) AS total FROM follows WHERE following_id = ?',
       [targetId]
     );
+    await createNotification(connection, {
+      userId: targetId,
+      fromUserId: req.user.id,
+      type: 'follow',
+      targetType: 'user',
+      targetId,
+      content: '关注了你',
+    });
+    await connection.commit();
 
     return res.json({
       code: 0,
       data: { isFollowing: true, followersCount: updated[0].total || 0 },
     });
   } catch (error) {
+    if (connection) await connection.rollback();
     console.error('Follow user error:', error);
     return res.status(500).json({ code: 5000, message: '服务器内部错误' });
+  } finally {
+    connection?.release();
   }
 });
 

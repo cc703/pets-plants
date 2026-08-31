@@ -10,12 +10,35 @@ const {
 } = require('../middleware/auth');
 const { createRateLimit } = require('../middleware/rateLimit');
 const jwt = require('jsonwebtoken');
+const {
+  TOKEN_TTL_MINUTES,
+  createVerificationToken,
+  hashVerificationToken,
+  isValidEmail,
+} = require('../utils/emailVerification');
+const {
+  CODE_TTL_MINUTES,
+  createLoginCode,
+  hashLoginCode,
+  isValidLoginCode,
+} = require('../utils/emailLoginCode');
+const {
+  EMAIL_NOT_CONFIGURED,
+  isConfigured: isEmailConfigured,
+  sendEmail,
+} = require('../services/emailService');
 
 const router = express.Router();
 const authRateLimit = createRateLimit({
   windowMs: 15 * 60 * 1000,
   max: 80,
   keyPrefix: 'auth',
+});
+const emailRateLimit = createRateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 8,
+  keyPrefix: 'email-auth',
+  keyGenerator: (req) => `${req.ip || 'unknown'}:${String(req.body?.email || '').trim().toLowerCase()}`,
 });
 
 const SMS_CODE_TTL_MINUTES = 5;
@@ -25,6 +48,7 @@ const SMS_TYPE_MAP = {
   login: 'login',
   reset: 'reset_password',
 };
+const EMAIL_CODE_MAX_ATTEMPTS = 5;
 
 function buildUserDto(row) {
   return {
@@ -34,11 +58,58 @@ function buildUserDto(row) {
     avatarUrl: row.avatar_url || null,
     phone: row.phone || null,
     email: row.email || null,
+    emailVerifiedAt: row.email_verified_at || null,
     bio: row.bio || '',
     level: row.level || 1,
     points: row.points || 0,
     createdAt: row.created_at,
   };
+}
+
+function createEmailVerificationLink(token) {
+  const baseUrl = process.env.EMAIL_VERIFY_URL_BASE || 'http://localhost:8081/(auth)/verify-email';
+  return `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
+}
+
+async function issueEmailVerification(pool, user) {
+  const { token, tokenHash } = createVerificationToken();
+  await pool.execute(
+    `UPDATE email_verification_tokens
+     SET used_at = NOW()
+     WHERE user_id = ? AND purpose = 'activation' AND used_at IS NULL`,
+    [user.id],
+  );
+  await pool.execute(
+    `INSERT INTO email_verification_tokens
+      (id, user_id, email, token_hash, purpose, expires_at)
+     VALUES (?, ?, ?, ?, 'activation', DATE_ADD(NOW(), INTERVAL ? MINUTE))`,
+    [uuidv4(), user.id, user.email, tokenHash, TOKEN_TTL_MINUTES],
+  );
+  return token;
+}
+
+async function sendVerificationEmail(pool, user) {
+  const token = await issueEmailVerification(pool, user);
+  const link = createEmailVerificationLink(token);
+  await sendEmail({
+    to: user.email,
+    subject: '萌宠星球：请验证你的邮箱',
+    text: `请打开以下链接完成邮箱验证：${link}`,
+    html: `<p>请点击以下链接完成邮箱验证：</p><p><a href="${link}">${link}</a></p>`,
+  });
+  return { expiresIn: TOKEN_TTL_MINUTES * 60 };
+}
+
+async function issueAuthTokens(pool, user) {
+  const userPayload = { id: user.id, username: user.username };
+  const accessToken = generateAccessToken(userPayload);
+  const refreshToken = generateRefreshToken(userPayload);
+  await pool.execute(
+    'INSERT INTO refresh_tokens (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)',
+    [uuidv4(), user.id, refreshToken, new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)],
+  );
+  await pool.execute('UPDATE users SET last_login_at = NOW() WHERE id = ?', [user.id]);
+  return { accessToken, refreshToken };
 }
 
 /**
@@ -114,24 +185,23 @@ router.post('/register', authRateLimit, async (req, res) => {
       [userId, username, passwordHash, finalNickname, phone || null, email || null]
     );
 
-    // --- Generate tokens ---
-    const userPayload = { id: userId, username };
-    const accessToken = generateAccessToken(userPayload);
-    const refreshToken = generateRefreshToken(userPayload);
-
-    // Store refresh token
-    const refreshTokenId = uuidv4();
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    await req.app.locals.pool.execute(
-      'INSERT INTO refresh_tokens (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)',
-      [refreshTokenId, userId, refreshToken, expiresAt]
-    );
-
-    // Update last login
-    await req.app.locals.pool.execute(
-      'UPDATE users SET last_login_at = NOW() WHERE id = ?',
-      [userId]
-    );
+    const user = { id: userId, username, email: email || null };
+    const { accessToken, refreshToken } = await issueAuthTokens(req.app.locals.pool, user);
+    let emailVerification = { status: 'not_required' };
+    if (email) {
+      if (isEmailConfigured()) {
+        try {
+          await sendVerificationEmail(req.app.locals.pool, user);
+          emailVerification = { status: 'pending', expiresIn: TOKEN_TTL_MINUTES * 60 };
+        } catch (error) {
+          emailVerification = {
+            status: error.code === EMAIL_NOT_CONFIGURED ? 'not_configured' : 'delivery_failed',
+          };
+        }
+      } else {
+        emailVerification = { status: 'not_configured' };
+      }
+    }
 
     return res.status(201).json({
       code: 0,
@@ -146,11 +216,77 @@ router.post('/register', authRateLimit, async (req, res) => {
         accessToken,
         refreshToken,
         expiresIn: 7200,
+        emailVerification,
       },
     });
   } catch (error) {
     console.error('Register error:', error);
     return res.status(500).json({ code: 5000, message: '服务器内部错误' });
+  }
+});
+
+router.get('/verify-email', async (req, res) => {
+  try {
+    const token = String(req.query.token || '');
+    if (!token) return res.status(400).json({ code: 1001, message: '验证Token为必填项' });
+    const [rows] = await req.app.locals.pool.execute(
+      `SELECT id, user_id, token_hash, expires_at, used_at
+       FROM email_verification_tokens
+       WHERE token_hash = ? AND purpose = 'activation'
+       LIMIT 1`,
+      [hashVerificationToken(token)],
+    );
+    if (!rows.length) return res.status(400).json({ code: 2007, message: '验证Token无效' });
+    const record = rows[0];
+    if (record.used_at) return res.status(409).json({ code: 2008, message: '验证Token已使用' });
+    if (new Date(record.expires_at).getTime() <= Date.now()) {
+      return res.status(410).json({ code: 2009, message: '验证Token已过期' });
+    }
+    const [users] = await req.app.locals.pool.execute(
+      'SELECT id, email_verified_at FROM users WHERE id = ? LIMIT 1',
+      [record.user_id],
+    );
+    if (!users.length) return res.status(404).json({ code: 1004, message: '用户不存在' });
+    if (users[0].email_verified_at) {
+      return res.status(409).json({ code: 2010, message: '邮箱已验证' });
+    }
+    const [claimed] = await req.app.locals.pool.execute(
+      `UPDATE email_verification_tokens
+       SET used_at = NOW()
+       WHERE id = ? AND used_at IS NULL AND expires_at > NOW()`,
+      [record.id],
+    );
+    if (!claimed.affectedRows) return res.status(409).json({ code: 2008, message: '验证Token已使用' });
+    await req.app.locals.pool.execute('UPDATE users SET email_verified_at = NOW() WHERE id = ?', [record.user_id]);
+    return res.json({ code: 0, message: '邮箱验证成功' });
+  } catch (error) {
+    console.error('Verify email error:', error);
+    return res.status(500).json({ code: 5000, message: '邮箱验证失败' });
+  }
+});
+
+router.post('/email/verification/send', emailRateLimit, async (req, res) => {
+  try {
+    const email = String(req.body.email || '').trim().toLowerCase();
+    if (!isValidEmail(email)) return res.status(400).json({ code: 1001, message: '邮箱格式不正确' });
+    if (!isEmailConfigured()) {
+      return res.status(503).json({ code: EMAIL_NOT_CONFIGURED, message: '邮件服务未配置' });
+    }
+    const [users] = await req.app.locals.pool.execute(
+      'SELECT id, username, email, email_verified_at FROM users WHERE email = ? LIMIT 1',
+      [email],
+    );
+    if (!users.length || users[0].email_verified_at) {
+      return res.json({ code: 0, data: { expiresIn: TOKEN_TTL_MINUTES * 60 }, message: '如果邮箱可验证，验证邮件将发送到该邮箱' });
+    }
+    await sendVerificationEmail(req.app.locals.pool, users[0]);
+    return res.json({ code: 0, data: { expiresIn: TOKEN_TTL_MINUTES * 60 }, message: '验证邮件已发送' });
+  } catch (error) {
+    console.error('Send verification email error:', error);
+    return res.status(error.code === EMAIL_NOT_CONFIGURED ? 503 : 502).json({
+      code: error.code || 'EMAIL_DELIVERY_FAILED',
+      message: error.code === EMAIL_NOT_CONFIGURED ? '邮件服务未配置' : '验证邮件发送失败',
+    });
   }
 });
 
@@ -160,16 +296,23 @@ router.post('/register', authRateLimit, async (req, res) => {
  */
 router.post('/login', authRateLimit, async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, email, password } = req.body;
 
-    if (!username || !password) {
-      return res.status(400).json({ code: 1001, message: '用户名和密码为必填项' });
+    if ((!username && !email) || !password) {
+      return res.status(400).json({ code: 1001, message: '用户名或邮箱及密码为必填项' });
+    }
+
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ code: 1001, message: '邮箱格式不正确' });
     }
 
     // Find user
     const [users] = await req.app.locals.pool.execute(
-      'SELECT id, username, password_hash, nickname, avatar_url, level, points, status FROM users WHERE username = ?',
-      [username]
+      `SELECT id, username, password_hash, nickname, avatar_url, level, points, status
+       FROM users
+       WHERE ${email ? 'email = ?' : 'username = ?'}
+       LIMIT 1`,
+      [email || username]
     );
 
     if (users.length === 0) {
@@ -181,6 +324,12 @@ router.post('/login', authRateLimit, async (req, res) => {
     // Check ban status
     if (user.status === 'banned') {
       return res.status(403).json({ code: 2005, message: '账号已被封禁' });
+    }
+
+    // Legacy accounts may not have a password after migration. Keep the
+    // password path explicit while allowing those users to use email-code login.
+    if (!user.password_hash) {
+      return res.status(401).json({ code: 2003, message: '账号或密码错误，请使用邮箱验证码登录' });
     }
 
     // Verify password
@@ -380,6 +529,112 @@ router.post('/sms/send', authRateLimit, async (req, res) => {
   }
 });
 
+router.post('/email/login-code/send', emailRateLimit, async (req, res) => {
+  try {
+    const email = String(req.body.email || '').trim().toLowerCase();
+    if (!isValidEmail(email)) return res.status(400).json({ code: 1001, message: '邮箱格式不正确' });
+    if (!isEmailConfigured()) {
+      return res.status(503).json({ code: EMAIL_NOT_CONFIGURED, message: '邮件服务未配置' });
+    }
+
+    const [users] = await req.app.locals.pool.execute(
+      'SELECT id, username, email, status FROM users WHERE email = ? LIMIT 1',
+      [email],
+    );
+    if (!users.length || users[0].status !== 'active') {
+      return res.json({ code: 0, data: { expiresIn: CODE_TTL_MINUTES * 60 }, message: '如果邮箱已注册，验证码将发送到该邮箱' });
+    }
+
+    const { code, codeHash } = createLoginCode();
+    await req.app.locals.pool.execute(
+      'UPDATE email_login_codes SET is_used = TRUE, used_at = NOW() WHERE email = ? AND is_used = FALSE',
+      [email],
+    );
+    await req.app.locals.pool.execute(
+      `INSERT INTO email_login_codes
+        (id, email, code_hash, expires_at)
+       VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE))`,
+      [uuidv4(), email, codeHash, CODE_TTL_MINUTES],
+    );
+    const subject = '萌宠星球：你的登录验证码';
+    await sendEmail({
+      to: email,
+      subject,
+      text: `你的登录验证码是 ${code}，${CODE_TTL_MINUTES} 分钟内有效。`,
+      html: `<p>你的登录验证码是：</p><p><strong>${code}</strong></p><p>${CODE_TTL_MINUTES} 分钟内有效。</p>`,
+    });
+    const data = { expiresIn: CODE_TTL_MINUTES * 60 };
+    if (process.env.NODE_ENV !== 'production' && process.env.EMAIL_DEBUG_CODES === 'true') data.debugCode = code;
+    return res.json({ code: 0, data, message: '验证码已发送' });
+  } catch (error) {
+    console.error('Send email login code error:', error);
+    return res.status(error.code === EMAIL_NOT_CONFIGURED ? 503 : 502).json({
+      code: error.code || 'EMAIL_DELIVERY_FAILED',
+      message: error.code === EMAIL_NOT_CONFIGURED ? '邮件服务未配置' : '验证码发送失败',
+    });
+  }
+});
+
+router.post('/email/login-code/login', emailRateLimit, async (req, res) => {
+  try {
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const code = String(req.body.code || '').trim();
+    if (!isValidEmail(email) || !isValidLoginCode(code)) {
+      return res.status(400).json({ code: 1001, message: '邮箱或验证码格式不正确' });
+    }
+    const [rows] = await req.app.locals.pool.execute(
+      `SELECT id, code_hash, expires_at, is_used, attempt_count
+       FROM email_login_codes
+       WHERE email = ? AND is_used = FALSE
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [email],
+    );
+    if (!rows.length) return res.status(401).json({ code: 2011, message: '验证码无效或已过期' });
+    const record = rows[0];
+    if (record.attempt_count >= EMAIL_CODE_MAX_ATTEMPTS) {
+      return res.status(429).json({ code: 2012, message: '验证码尝试次数过多，请重新获取' });
+    }
+    if (new Date(record.expires_at).getTime() <= Date.now()) {
+      return res.status(401).json({ code: 2011, message: '验证码无效或已过期' });
+    }
+    const matched = hashLoginCode(code) === record.code_hash;
+    if (!matched) {
+      await req.app.locals.pool.execute(
+        'UPDATE email_login_codes SET attempt_count = attempt_count + 1 WHERE id = ? AND is_used = FALSE',
+        [record.id],
+      );
+      return res.status(401).json({ code: 2011, message: '验证码无效或已过期' });
+    }
+    const [users] = await req.app.locals.pool.execute(
+      `SELECT id, username, nickname, avatar_url, phone, email, bio, level, points, status, created_at
+       FROM users WHERE email = ? LIMIT 1`,
+      [email],
+    );
+    if (!users.length || users[0].status !== 'active') {
+      return res.status(401).json({ code: 2003, message: '账号或验证码错误' });
+    }
+    const updated = await req.app.locals.pool.execute(
+      'UPDATE email_login_codes SET is_used = TRUE, used_at = NOW() WHERE id = ? AND is_used = FALSE',
+      [record.id],
+    );
+    if (!updated[0].affectedRows) return res.status(409).json({ code: 2013, message: '验证码已使用' });
+    const user = users[0];
+    const tokens = await issueAuthTokens(req.app.locals.pool, user);
+    return res.json({
+      code: 0,
+      data: {
+        user: buildUserDto(user),
+        ...tokens,
+        expiresIn: 7200,
+      },
+    });
+  } catch (error) {
+    console.error('Email code login error:', error);
+    return res.status(500).json({ code: 5000, message: '服务器内部错误' });
+  }
+});
+
 router.post('/email/reset/send', authRateLimit, async (req, res) => {
   try {
     const { email } = req.body;
@@ -498,6 +753,16 @@ router.post('/password/reset', authRateLimit, async (req, res) => {
 
       if (!matchedToken) {
         return res.status(400).json({ code: 1001, message: '重置Token无效或已过期' });
+      }
+
+      const [claimed] = await req.app.locals.pool.execute(
+        `UPDATE email_reset_tokens
+         SET is_used = TRUE, used_at = NOW()
+         WHERE id = ? AND is_used = FALSE AND expires_at > NOW()`,
+        [matchedToken.id],
+      );
+      if (!claimed.affectedRows) {
+        return res.status(409).json({ code: 2008, message: '重置Token已使用' });
       }
 
       userQuery = 'SELECT id FROM users WHERE id = ?';

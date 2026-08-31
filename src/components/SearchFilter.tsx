@@ -17,7 +17,7 @@ import {
   getSuitableForOptions,
   type SearchFilters,
 } from '../services/searchService';
-import type { Species } from '../types';
+import type { Breed, Species } from '../types';
 
 interface SearchFilterProps {
   /** 是否可见 */
@@ -30,6 +30,8 @@ interface SearchFilterProps {
   onReset: () => void;
   /** 关闭面板 */
   onClose: () => void;
+  /** 当前百科数据源，传入后筛选选项与结果保持一致 */
+  source?: Breed[];
 }
 
 /** 多选标签组 */
@@ -85,6 +87,7 @@ export default function SearchFilter({
   onConfirm,
   onReset,
   onClose,
+  source,
 }: SearchFilterProps) {
   // 本地状态，用于编辑中的筛选条件
   const [localSpecies, setLocalSpecies] = useState<Species | 'all'>(
@@ -98,7 +101,7 @@ export default function SearchFilter({
     filters.suitableFor || []
   );
 
-  const suitableForOptions = useMemo(() => getSuitableForOptions(), []);
+  const suitableForOptions = useMemo(() => getSuitableForOptions(source), [source]);
 
   // 每次打开时同步外部 filters
   React.useEffect(() => {

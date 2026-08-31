@@ -3,6 +3,15 @@ const cors = require('cors');
 const path = require('path');
 const mysql = require('mysql2/promise');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
+const { loadRuntimeConfig } = require('./config/runtime');
+
+let runtimeConfig;
+try {
+  runtimeConfig = loadRuntimeConfig();
+} catch (error) {
+  console.error(`[startup] ${error.code || 'RUNTIME_CONFIG_INVALID'}: ${error.message}`);
+  process.exit(1);
+}
 
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
@@ -14,16 +23,12 @@ const pointsRoutes = require('./routes/points');
 const messageRoutes = require('./routes/messages');
 const circleRoutes = require('./routes/circles');
 const reportRoutes = require('./routes/reports');
+const userPetRoutes = require('./routes/user-pets');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-const corsOrigins = (process.env.CORS_ORIGIN || '')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
-const uploadDir = process.env.UPLOAD_DIR
-  ? path.resolve(process.env.UPLOAD_DIR)
-  : path.join(__dirname, 'uploads');
+const PORT = runtimeConfig.port;
+const corsOrigins = runtimeConfig.corsOrigins;
+const uploadDir = runtimeConfig.uploadDir;
 
 app.use(corsOrigins.length > 0
   ? cors({
@@ -44,10 +49,11 @@ app.use('/uploads', express.static(uploadDir));
 
 // MySQL 连接池
 const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'pet_planet',
+  host: runtimeConfig.database.host,
+  port: runtimeConfig.database.port,
+  user: runtimeConfig.database.user,
+  password: runtimeConfig.database.password,
+  database: runtimeConfig.database.name,
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
@@ -55,6 +61,7 @@ const pool = mysql.createPool({
 
 // Make pool accessible to routes via req.app.locals.pool
 app.locals.pool = pool;
+app.locals.runtimeConfig = runtimeConfig;
 
 // Mount routes
 app.use('/api/auth', authRoutes);
@@ -68,6 +75,7 @@ app.use('/api/points', pointsRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/circles', circleRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/user-pets', userPetRoutes);
 
 // GET /api/bookmarks - Get current user's bookmarked posts
 const { authMiddleware: authMw } = require('./middleware/auth');
@@ -134,6 +142,9 @@ app.get('/api/health', (req, res) => {
 app.get('/api/breeds', async (req, res) => {
   try {
     const { species, page = 1, limit = 20 } = req.query;
+    const pageNumber = Math.max(1, parseInt(page, 10) || 1);
+    const limitNumber = Math.min(50, Math.max(1, parseInt(limit, 10) || 20));
+    const offset = (pageNumber - 1) * limitNumber;
     let sql = 'SELECT * FROM breeds';
     const params = [];
 
@@ -142,11 +153,10 @@ app.get('/api/breeds', async (req, res) => {
       params.push(species);
     }
 
-    sql += ' ORDER BY popularity_rank ASC LIMIT ? OFFSET ?';
-    params.push(Number(limit), (Number(page) - 1) * Number(limit));
+    sql += ` ORDER BY popularity_rank ASC LIMIT ${limitNumber} OFFSET ${offset}`;
 
-    const [rows] = await pool.execute(sql, params);
-    res.json({ data: rows, page: Number(page), limit: Number(limit) });
+    const [rows] = await pool.query(sql, params);
+    res.json({ data: rows, page: pageNumber, limit: limitNumber });
   } catch (error) {
     console.error('Error fetching breeds:', error);
     res.status(500).json({ error: '获取品种列表失败' });
@@ -180,6 +190,17 @@ app.get('/api/breeds/search/:keyword', async (req, res) => {
     console.error('Error searching breeds:', error);
     res.status(500).json({ error: '搜索失败' });
   }
+});
+
+// Keep parser, upload and route failures on a stable public error contract.
+app.use((error, req, res, next) => {
+  if (res.headersSent) return next(error);
+  const status = error.status || error.statusCode || (error.code === 'LIMIT_FILE_SIZE' ? 413 : 500);
+  console.error('[request-error]', error.code || error.name || 'UNKNOWN', error.message);
+  return res.status(status).json({
+    code: error.code === 'LIMIT_FILE_SIZE' ? 'UPLOAD_TOO_LARGE' : 'REQUEST_FAILED',
+    message: status === 500 ? '服务器内部错误' : error.message,
+  });
 });
 
 const server = app.listen(PORT, () => {

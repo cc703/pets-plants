@@ -1,7 +1,7 @@
 const pool = require('../server/db');
 
 const USER_PATTERN =
-  "^(probe_|flow|compat_|cm|cc|cl|fa|fb|fw|ci|bm|px|ep|cp|st|utf|ga|gb|bk|uf|cy|pf|cfix|debug_|ph|tc|ui_smoke_)";
+  "^(probe_|flow|compat_|cm|cc|cl|fa|fb|fw|ci|bm|px|ep|cp|st|utf|ga|gb|bk|uf|cy|pf|cfix|debug_|ph|tc|ui_smoke_|ui[0-9]{8}$|tu[0-9]{10,}$|b[0-9]{10,}$|notify[0-9]{8}$)";
 
 async function query(sql, params = []) {
   const [rows] = await pool.query(sql, params);
@@ -33,14 +33,23 @@ async function collectTargets() {
   const suspiciousComments = await query(
     `SELECT DISTINCT c.id
      FROM comments c
+     LEFT JOIN posts p ON p.id = c.post_id
      LEFT JOIN users u ON u.id = c.user_id
+     LEFT JOIN users postAuthor ON postAuthor.id = p.user_id
      WHERE c.content LIKE '%?%'
-        OR u.username REGEXP ?`,
-    [USER_PATTERN],
+        OR u.username REGEXP ?
+        OR postAuthor.username REGEXP ?`,
+    [USER_PATTERN, USER_PATTERN],
   );
 
   const suspiciousCircles = await query(
-    `SELECT id FROM circles WHERE id LIKE 'manual_%' OR name LIKE '%?%'`,
+    `SELECT c.id
+     FROM circles c
+     LEFT JOIN users u ON u.id = c.creator_id
+     WHERE u.username REGEXP ?
+        OR c.id LIKE 'manual_%'
+        OR c.name LIKE '%?%'`,
+    [USER_PATTERN],
   );
 
   return {

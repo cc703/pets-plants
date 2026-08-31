@@ -27,7 +27,6 @@ import {
   difficultyNames,
   difficultyColors,
 } from '../../src/data/quizzes';
-import { pointsService } from '../../src/services/pointsService';
 
 const { width } = Dimensions.get('window');
 const TIMER_DURATION = 30;
@@ -235,12 +234,6 @@ export default function QuizPlayScreen() {
         totalPoints,
         timeSpent
       ).catch(() => {});
-    }
-
-    // Sync quiz points to main points system
-    if (totalPoints > 0) {
-      const categoryLabel = mode === 'daily' ? '每日挑战' : (categoryNames[category as QuizCategory] || '答题');
-      pointsService.addPoints(totalPoints, 'quiz', `${categoryLabel}奖励`).catch(() => {});
     }
   };
 

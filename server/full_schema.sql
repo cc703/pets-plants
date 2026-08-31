@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS users (
   username VARCHAR(50) UNIQUE NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
   phone VARCHAR(20),
-  email VARCHAR(100),
+  email VARCHAR(100) UNIQUE,
+  email_verified_at TIMESTAMP NULL,
   avatar_url VARCHAR(500),
   nickname VARCHAR(50),
   bio VARCHAR(200),
@@ -58,6 +59,26 @@ CREATE TABLE IF NOT EXISTS users (
   INDEX idx_phone (phone),
   INDEX idx_email (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户表';
+
+-- =============================================
+-- 2.1 真实主宠档案表
+-- =============================================
+CREATE TABLE IF NOT EXISTS user_pets (
+  id VARCHAR(36) PRIMARY KEY,
+  user_id VARCHAR(36) NOT NULL,
+  breed_id VARCHAR(50) NOT NULL,
+  name VARCHAR(50) NOT NULL,
+  birthday DATE NULL,
+  sex ENUM('male', 'female', 'unknown') NOT NULL DEFAULT 'unknown',
+  avatar_url VARCHAR(500) NULL,
+  is_primary BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_user_pets_user (user_id),
+  INDEX idx_user_pets_breed (breed_id),
+  CONSTRAINT fk_user_pets_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_user_pets_breed FOREIGN KEY (breed_id) REFERENCES breeds(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='真实主宠档案表';
 
 -- =============================================
 -- 3. 刷新Token表
@@ -103,6 +124,35 @@ CREATE TABLE IF NOT EXISTS email_reset_tokens (
   INDEX idx_user_used (user_id, is_used),
   INDEX idx_expires (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='邮箱密码重置Token表';
+
+CREATE TABLE IF NOT EXISTS email_verification_tokens (
+  id VARCHAR(36) PRIMARY KEY,
+  user_id VARCHAR(36) NOT NULL,
+  email VARCHAR(100) NOT NULL,
+  token_hash CHAR(64) NOT NULL,
+  purpose ENUM('activation', 'verification') NOT NULL DEFAULT 'activation',
+  expires_at TIMESTAMP NOT NULL,
+  used_at TIMESTAMP NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY uk_email_verification_token_hash (token_hash),
+  INDEX idx_email_verification_user (user_id, purpose, used_at),
+  INDEX idx_email_verification_expires (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='邮箱验证Token表';
+
+CREATE TABLE IF NOT EXISTS email_login_codes (
+  id VARCHAR(36) PRIMARY KEY,
+  email VARCHAR(100) NOT NULL,
+  code_hash CHAR(64) NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
+  is_used BOOLEAN NOT NULL DEFAULT FALSE,
+  used_at TIMESTAMP NULL,
+  attempt_count INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_email_login_code_hash (code_hash),
+  INDEX idx_email_login_code_lookup (email, is_used, expires_at),
+  INDEX idx_email_login_code_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='邮箱验证码登录表';
 
 CREATE TABLE IF NOT EXISTS rate_limit_buckets (
   bucket_key VARCHAR(191) PRIMARY KEY,

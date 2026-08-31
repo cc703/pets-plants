@@ -11,7 +11,7 @@ const aiRateLimit = createRateLimit({
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions';
 const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
-const SAFETY_NOTE = 'AI 建议仅供养宠参考，不能替代兽医诊疗；若宠物持续呕吐、精神萎靡、呼吸异常、抽搐、外伤出血等，请尽快就医。';
+const SAFETY_NOTE = 'AI 仅提供一般养宠信息，不做疾病诊断或用药剂量建议；若出现持续呕吐、精神萎靡、呼吸异常、抽搐、外伤出血等情况，请立即联系执业兽医。';
 
 const SYSTEM_PROMPT = `你是"萌宠星球"的 AI 宠物顾问，名叫"萌萌"。你的职责是：
 
@@ -24,8 +24,9 @@ const SYSTEM_PROMPT = `你是"萌宠星球"的 AI 宠物顾问，名叫"萌萌"�
 回复要求：
 - 使用中文回答
 - 语气亲切友好，适当使用 emoji
-- 回答要专业但易懂
-- 涉及医疗问题时，提醒用户咨询专业兽医
+- 回答要专业但易懂，并说明适用前提
+- 涉及健康问题时先判断是否存在紧急症状；紧急情况优先建议立即就医
+- 不进行疾病确诊，不提供处方、药物剂量或停药建议
 - 回答控制在 300 字以内`;
 
 async function requestDeepSeek(messages, options = {}) {
@@ -35,20 +36,28 @@ async function requestDeepSeek(messages, options = {}) {
     throw error;
   }
 
-  const response = await fetch(DEEPSEEK_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: DEEPSEEK_MODEL,
-      messages,
-      max_tokens: options.maxTokens || 1024,
-      temperature: options.temperature ?? 0.7,
-      stream: false,
-    }),
-  });
+  let response;
+  try {
+    response = await fetch(DEEPSEEK_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: DEEPSEEK_MODEL,
+        messages,
+        max_tokens: options.maxTokens || 1024,
+        temperature: options.temperature ?? 0.7,
+        stream: false,
+      }),
+    });
+  } catch (cause) {
+    const error = new Error('DeepSeek API unavailable');
+    error.statusCode = 502;
+    error.cause = cause;
+    throw error;
+  }
 
   if (!response.ok) {
     const errBody = await response.text();
@@ -92,7 +101,11 @@ router.post('/chat', aiRateLimit, async (req, res) => {
     return res.json({ code: 0, data: { reply, safetyNote: SAFETY_NOTE } });
   } catch (error) {
     console.error('AI chat error:', error);
-    return res.status(500).json({ code: 5000, message: '服务器内部错误' });
+    const status = error.statusCode || 500;
+    return res.status(status).json({
+      code: status === 502 ? 5002 : 5000,
+      message: status === 502 ? 'AI 服务响应异常，请稍后重试' : '服务器内部错误',
+    });
   }
 });
 

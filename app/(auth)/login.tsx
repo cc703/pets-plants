@@ -7,17 +7,21 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/contexts/AuthContext';
+import { authApi } from '../../src/services/authApi';
 import { Colors, Spacing, BorderRadius, FontSize, Shadows } from '../../src/utils/theme';
 import { safeBack } from '../../src/utils/nav';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, status, error, clearError } = useAuth();
+  const { login, loginWithEmail, loginWithEmailCode, status, error, clearError } = useAuth();
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [localError, setLocalError] = useState('');
+  const [mode, setMode] = useState<'password' | 'code'>('password');
+  const [code, setCode] = useState('');
+  const [countdown, setCountdown] = useState(0);
 
   const isLoading = status === 'loading';
   const passwordRef = useRef<TextInput>(null);
@@ -26,16 +30,55 @@ export default function LoginPage() {
     return () => { clearError(); };
   }, []);
 
+  useEffect(() => {
+    if (!countdown) return undefined;
+    const timer = setInterval(() => setCountdown((value) => Math.max(0, value - 1)), 1000);
+    return () => clearInterval(timer);
+  }, [countdown]);
+
   const handleLogin = useCallback(async () => {
     if (isLoading) return;
     setLocalError('');
     clearError();
 
-    if (!username.trim()) { setLocalError('请输入用户名'); return; }
+    const identifier = username.trim();
+    if (!identifier) { setLocalError('请输入用户名或邮箱'); return; }
+    if (mode === 'code') {
+      if (!code) { setLocalError('请输入邮箱验证码'); return; }
+      if (!/^\d{6}$/.test(code)) { setLocalError('验证码为6位数字'); return; }
+      if (!identifier.includes('@')) { setLocalError('验证码登录需要使用邮箱'); return; }
+      await loginWithEmailCode(identifier, code);
+      return;
+    }
     if (!password) { setLocalError('请输入密码'); return; }
 
-    await login(username.trim(), password);
-  }, [username, password, isLoading, login, clearError]);
+    if (identifier.includes('@')) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier)) {
+        setLocalError('邮箱格式不正确');
+        return;
+      }
+      await loginWithEmail(identifier, password);
+      return;
+    }
+    await login(identifier, password);
+  }, [username, password, code, mode, isLoading, login, loginWithEmail, loginWithEmailCode, clearError]);
+
+  const handleSendCode = useCallback(async () => {
+    const identifier = username.trim().toLowerCase();
+    setLocalError('');
+    clearError();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier)) {
+      setLocalError('请输入正确的邮箱');
+      return;
+    }
+    if (countdown > 0) return;
+    try {
+      const result = await authApi.sendEmailLoginCode(identifier);
+      setCountdown(Math.max(1, Math.floor(result.expiresIn > 60 ? 60 : result.expiresIn)));
+    } catch (requestError: any) {
+      setLocalError(requestError.message || '验证码发送失败');
+    }
+  }, [username, countdown, clearError]);
 
   const displayError = localError || error;
 
@@ -67,12 +110,13 @@ export default function LoginPage() {
               <TextInput
                 testID="login-username-input"
                 style={styles.input}
-                placeholder="请输入用户名"
+                placeholder="用户名或邮箱"
                 placeholderTextColor={Colors.textLight}
                 value={username}
                 onChangeText={(t) => { setUsername(t); setLocalError(''); clearError(); }}
                 autoCapitalize="none"
                 autoCorrect={false}
+                keyboardType="email-address"
                 returnKeyType="next"
                 onSubmitEditing={() => passwordRef.current?.focus()}
               />
@@ -84,22 +128,32 @@ export default function LoginPage() {
                 testID="login-password-input"
                 ref={passwordRef}
                 style={styles.input}
-                placeholder="请输入密码"
+                placeholder={mode === 'password' ? '请输入密码' : '邮箱验证码（6位）'}
                 placeholderTextColor={Colors.textLight}
-                value={password}
-                onChangeText={(t) => { setPassword(t); setLocalError(''); clearError(); }}
-                secureTextEntry={!showPassword}
+                value={mode === 'password' ? password : code}
+                onChangeText={(t) => {
+                  if (mode === 'password') setPassword(t);
+                  else setCode(t.replace(/\D/g, '').slice(0, 6));
+                  setLocalError(''); clearError();
+                }}
+                secureTextEntry={mode === 'password' && !showPassword}
                 returnKeyType="go"
                 onSubmitEditing={handleLogin}
               />
-              <TouchableOpacity
+              {mode === 'password' ? <TouchableOpacity
                 onPress={() => setShowPassword(!showPassword)}
                 style={styles.eyeBtn}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 <Ionicons name={showPassword ? 'eye-outline' : 'eye-off-outline'} size={20} color={Colors.textLight} />
-              </TouchableOpacity>
+              </TouchableOpacity> : null}
             </View>
+
+            {mode === 'code' ? (
+              <TouchableOpacity style={styles.codeBtn} onPress={handleSendCode} disabled={countdown > 0}>
+                <Text style={styles.codeBtnText}>{countdown > 0 ? `${countdown}s 后重发` : '获取邮箱验证码'}</Text>
+              </TouchableOpacity>
+            ) : null}
 
             {displayError ? (
               <View style={styles.errorRow}>
@@ -108,9 +162,14 @@ export default function LoginPage() {
               </View>
             ) : null}
 
-            <TouchableOpacity style={styles.forgotRow} onPress={() => router.push('/(auth)/forgot-password' as any)}>
-              <Text style={styles.forgotLink}>忘记密码？</Text>
-            </TouchableOpacity>
+            <View style={styles.modeRow}>
+              <TouchableOpacity onPress={() => { setMode(mode === 'password' ? 'code' : 'password'); setLocalError(''); }}>
+                <Text style={styles.forgotLink}>{mode === 'password' ? '邮箱验证码登录' : '密码登录'}</Text>
+              </TouchableOpacity>
+              {mode === 'password' ? <TouchableOpacity onPress={() => router.push('/(auth)/forgot-password' as any)}>
+                <Text style={styles.forgotLink}>忘记密码？</Text>
+              </TouchableOpacity> : null}
+            </View>
 
             <TouchableOpacity
               testID="login-submit-btn"
@@ -166,6 +225,9 @@ const styles = StyleSheet.create({
   },
   errorText: { fontSize: FontSize.sm, color: Colors.error },
   forgotRow: { alignItems: 'flex-end', marginBottom: Spacing.xl },
+  modeRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: Spacing.xl },
+  codeBtn: { alignItems: 'center', marginTop: -Spacing.sm, marginBottom: Spacing.md },
+  codeBtnText: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: '600' },
   forgotLink: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: '500' },
   loginBtn: {
     backgroundColor: Colors.primary, borderRadius: BorderRadius.xl, height: 52,

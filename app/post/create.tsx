@@ -19,12 +19,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, Stack } from 'expo-router';
+import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { safeBack, requireLogin } from '../../src/utils/nav';
 import { Colors, Spacing, BorderRadius, FontSize, Shadows } from '../../src/utils/theme';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { createPost } from '../../src/services/postService';
 import { uploadImage } from '../../src/services/api';
+import { getCircles, type Circle } from '../../src/services/circleService';
 
 const MAX_IMAGES = 9;
 const MAX_CONTENT_LENGTH = 2000;
@@ -36,18 +37,10 @@ const recommendedTags = [
   '成长日记', '搞笑', '治愈', '摄影',
 ];
 
-const circleOptions = [
-  { id: 'c1', name: '布偶圈', emoji: '🐱' },
-  { id: 'c2', name: '英短圈', emoji: '🐱' },
-  { id: 'c3', name: '柯基圈', emoji: '🐶' },
-  { id: 'c4', name: '金毛圈', emoji: '🐶' },
-  { id: 'c5', name: '橘猫圈', emoji: '🐱' },
-  { id: 'c6', name: '哈士奇圈', emoji: '🐶' },
-];
-
 export default function CreatePostPage() {
   const router = useRouter();
   const { user } = useAuth();
+  const { circleId: initialCircleId } = useLocalSearchParams<{ circleId?: string }>();
 
   useEffect(() => {
     if (!user) {
@@ -65,6 +58,35 @@ export default function CreatePostPage() {
   const [selectedCircle, setSelectedCircle] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
+  const [circles, setCircles] = useState<Circle[]>([]);
+  const [circlesLoading, setCirclesLoading] = useState(true);
+  const [circlesError, setCirclesError] = useState<string | null>(null);
+
+  const loadCircles = useCallback(async () => {
+    setCirclesLoading(true);
+    setCirclesError(null);
+    try {
+      setCircles(await getCircles());
+    } catch {
+      setCirclesError('圈子加载失败，请重试');
+    } finally {
+      setCirclesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCircles();
+  }, [loadCircles]);
+
+  useEffect(() => {
+    if (
+      !selectedCircle
+      && typeof initialCircleId === 'string'
+      && circles.some((circle) => circle.id === initialCircleId)
+    ) {
+      setSelectedCircle(initialCircleId);
+    }
+  }, [circles, initialCircleId, selectedCircle]);
 
   // 选择图片（使用 expo-image-picker，当前为 mock）
   const handlePickImages = useCallback(async () => {
@@ -267,41 +289,60 @@ export default function CreatePostPage() {
           {/* 圈子选择 */}
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>选择圈子（可选）</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.circleRow}
-            >
-              {circleOptions.map((circle) => (
+            {circlesLoading ? (
+              <View style={styles.circleStatus}>
+                <ActivityIndicator size="small" color={Colors.primary} />
+                <Text style={styles.circleStatusText}>加载圈子...</Text>
+              </View>
+            ) : circlesError ? (
+              <View style={styles.circleStatus}>
+                <Text style={styles.circleStatusText}>{circlesError}</Text>
                 <TouchableOpacity
-                  key={circle.id}
-                  testID={`create-post-circle-${circle.id}`}
-                  style={[
-                    styles.circleChip,
-                    selectedCircle === circle.id && styles.circleChipActive,
-                  ]}
-                  onPress={() =>
-                    setSelectedCircle(
-                      selectedCircle === circle.id ? null : circle.id,
-                    )
-                  }
-                  activeOpacity={0.7}
+                  testID="create-post-circles-retry-btn"
+                  onPress={loadCircles}
+                  accessibilityRole="button"
+                  accessibilityLabel="重试加载圈子"
                 >
-                  <Text style={styles.circleChipEmoji}>{circle.emoji}</Text>
-                  <Text
-                    style={[
-                      styles.circleChipText,
-                      selectedCircle === circle.id && {
-                        color: Colors.primary,
-                        fontWeight: '600',
-                      },
-                    ]}
-                  >
-                    {circle.name}
-                  </Text>
+                  <Text style={styles.circleRetryText}>重试</Text>
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
+              </View>
+            ) : (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.circleRow}
+              >
+                {circles.map((circle) => (
+                  <TouchableOpacity
+                    key={circle.id}
+                    testID={`create-post-circle-${circle.id}`}
+                    style={[
+                      styles.circleChip,
+                      selectedCircle === circle.id && styles.circleChipActive,
+                    ]}
+                    onPress={() =>
+                      setSelectedCircle(
+                        selectedCircle === circle.id ? null : circle.id,
+                      )
+                    }
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.circleChipEmoji}>{circle.emoji}</Text>
+                    <Text
+                      style={[
+                        styles.circleChipText,
+                        selectedCircle === circle.id && {
+                          color: Colors.primary,
+                          fontWeight: '600',
+                        },
+                      ]}
+                    >
+                      {circle.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
           </View>
 
           {/* 标签输入 */}
@@ -502,6 +543,21 @@ const styles = StyleSheet.create({
   },
   circleRow: {
     gap: Spacing.sm,
+  },
+  circleStatus: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  circleStatusText: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+  },
+  circleRetryText: {
+    fontSize: FontSize.xs,
+    color: Colors.primary,
+    fontWeight: '600',
   },
   circleChip: {
     flexDirection: 'row',

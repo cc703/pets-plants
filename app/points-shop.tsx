@@ -10,6 +10,7 @@ import { ensureLoggedIn, safeBack } from '../src/utils/nav';
 import { Colors, Spacing, BorderRadius, FontSize, Shadows } from '../src/utils/theme';
 import { pointsService } from '../src/services/pointsService';
 import { useAuth } from '../src/contexts/AuthContext';
+import ComingSoonModal from '../src/components/ComingSoonModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -22,6 +23,7 @@ interface ShopItem {
   category: 'virtual' | 'coupon' | 'theme' | 'gift';
   hot?: boolean;
   tag?: string;
+  available?: boolean;
 }
 
 const shopItems: ShopItem[] = [
@@ -31,8 +33,8 @@ const shopItems: ShopItem[] = [
   { id: 'toy-2', name: '飞盘', description: '虚拟宠物健康度+10', icon: '🥏', price: 20, category: 'virtual' },
   { id: 'theme-1', name: '星空主题', description: '解锁星空背景主题', icon: '🌙', price: 200, category: 'theme', tag: '限时' },
   { id: 'theme-2', name: '森林主题', description: '解锁森林背景主题', icon: '🌲', price: 200, category: 'theme' },
-  { id: 'coupon-1', name: '9折优惠券', description: '商城购物享9折', icon: '🎫', price: 100, category: 'coupon', hot: true },
-  { id: 'coupon-2', name: '免邮券', description: '商城购物免运费', icon: '📦', price: 80, category: 'coupon' },
+  { id: 'coupon-1', name: '9折优惠券', description: '实物商城上线后可用', icon: '🎫', price: 100, category: 'coupon', hot: true, available: false, tag: '开发中' },
+  { id: 'coupon-2', name: '免邮券', description: '实物商城上线后可用', icon: '📦', price: 80, category: 'coupon', available: false, tag: '开发中' },
   { id: 'gift-1', name: '头像框·萌爪', description: '限定萌爪头像框', icon: '🖼️', price: 300, category: 'gift', tag: '限定' },
   { id: 'gift-2', name: '称号·养宠达人', description: '个人主页展示称号', icon: '🏅', price: 500, category: 'gift' },
 ];
@@ -59,6 +61,7 @@ export default function PointsShopPage() {
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState('all');
   const [checkedIn, setCheckedIn] = useState(false);
+  const [comingSoonModal, setComingSoonModal] = useState<{ title: string; message: string } | null>(null);
 
   useEffect(() => {
     pointsService.getSummary().then((s) => {
@@ -86,6 +89,13 @@ export default function PointsShopPage() {
 
   const handleBuy = useCallback((item: ShopItem) => {
     if (!ensureLoggedIn(!!user, '积分兑换')) return;
+    if (item.available === false) {
+      setComingSoonModal({
+        title: '优惠券功能开发中',
+        message: '实物商城接入支付后，优惠券才可以用于真实订单。当前不会扣除积分。',
+      });
+      return;
+    }
     if (points < item.price) {
       Alert.alert('积分不足', `兑换「${item.name}」需要 ${item.price} 积分，当前仅有 ${points} 积分`);
       return;
@@ -111,6 +121,13 @@ export default function PointsShopPage() {
     );
   }, [user, points, router]);
 
+  const handleRealGoodsMall = useCallback(() => {
+    setComingSoonModal({
+      title: '实物商城即将上线',
+      message: '实物商品下单和支付能力正在开发中，当前版本暂不支持真实购买。',
+    });
+  }, []);
+
   const filtered = activeCategory === 'all'
     ? shopItems
     : shopItems.filter((i) => i.category === activeCategory);
@@ -129,6 +146,14 @@ export default function PointsShopPage() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      <View testID="real-goods-mall-modal" style={styles.modalHost}>
+        <ComingSoonModal
+          visible={comingSoonModal !== null}
+          title={comingSoonModal?.title ?? ''}
+          message={comingSoonModal?.message ?? ''}
+          onClose={() => setComingSoonModal(null)}
+        />
+      </View>
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Hero Points Card */}
         <LinearGradient
@@ -179,6 +204,32 @@ export default function PointsShopPage() {
             </Text>
           </View>
         </TouchableOpacity>
+
+        {/* Real Goods Mall Entry */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            testID="real-goods-mall-entry"
+            style={styles.realGoodsCard}
+            activeOpacity={0.85}
+            onPress={handleRealGoodsMall}
+          >
+            <View style={styles.realGoodsLeft}>
+              <View style={styles.realGoodsIconWrap}>
+                <Ionicons name="storefront-outline" size={24} color={Colors.primary} />
+              </View>
+              <View style={styles.realGoodsTextWrap}>
+                <View style={styles.realGoodsTitleRow}>
+                  <Text style={styles.realGoodsTitle}>实物商城</Text>
+                  <View style={styles.realGoodsStatus}>
+                    <Text style={styles.realGoodsStatusText}>即将上线</Text>
+                  </View>
+                </View>
+                <Text style={styles.realGoodsDesc}>宠物食品、用品和护理服务后续会接入真实订单与支付</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={Colors.textLight} />
+          </TouchableOpacity>
+        </View>
 
         {/* Hot Items Horizontal Scroll */}
         <View style={styles.section}>
@@ -242,7 +293,8 @@ export default function PointsShopPage() {
         {/* Items Grid */}
         <View style={styles.gridWrap}>
           {filtered.map((item, index) => {
-            const canBuy = user && points >= item.price;
+            const canBuy = item.available !== false && !!user && points >= item.price;
+            const isComingSoon = item.available === false;
             const catColor = categoryColors[item.category] || Colors.primary;
             return (
               <TouchableOpacity
@@ -268,7 +320,7 @@ export default function PointsShopPage() {
                   </View>
                   <View style={[styles.buyBtn, canBuy ? { backgroundColor: catColor } : styles.buyBtnDisabled]}>
                     <Text style={[styles.buyBtnText, !canBuy && styles.buyBtnTextDisabled]}>
-                      {canBuy ? '兑换' : '不足'}
+                      {isComingSoon ? '开发中' : canBuy ? '兑换' : '不足'}
                     </Text>
                   </View>
                 </View>
@@ -287,6 +339,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   scroll: { flex: 1 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  modalHost: { width: 0, height: 0 },
 
   // Hero card
   heroCard: {
@@ -335,6 +388,38 @@ const styles = StyleSheet.create({
   sectionHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   sectionTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.text },
   sectionMore: { fontSize: FontSize.sm, color: Colors.textSecondary },
+
+  // Real goods mall
+  realGoodsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: Spacing.xl,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+    ...Shadows.sm,
+  },
+  realGoodsLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  realGoodsIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: Colors.primary + '12',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  realGoodsTextWrap: { flex: 1 },
+  realGoodsTitleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: 3 },
+  realGoodsTitle: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text },
+  realGoodsStatus: {
+    backgroundColor: Colors.secondary + '18',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.full,
+  },
+  realGoodsStatusText: { fontSize: 10, fontWeight: '700', color: Colors.secondary },
+  realGoodsDesc: { fontSize: FontSize.xs, lineHeight: 18, color: Colors.textSecondary },
 
   // Hot items
   hotScroll: { paddingLeft: Spacing.xl, paddingRight: Spacing.sm, gap: Spacing.md },
