@@ -158,6 +158,7 @@ npm run test:migrations
 npm run test:server:smoke
 npm run test:ui:smoke
 npm run test:secrets
+npm run test:image-size-security
 npm run build:web
 node scripts/mobile-design-contract.test.js
 node scripts/points-shop-contract.test.js
@@ -173,6 +174,10 @@ node scripts/product-experience-contract.test.js
 - 客户端不能判断支付成功，也不能直接推进订单或退款状态。
 - 支付渠道需要通过独立适配层接入，并对回调、退款和重复提交做验签与幂等处理。
 - 在订单、库存、支付和退款服务接通前，实物购买入口保持“开发中”。
+
+### 依赖安全
+
+Metro 的上游 `image-size` 尚未发布包含 ICNS/JXL/HEIF 解析修复的版本。项目通过 `vendor/image-size` 提供兼容补丁，并在默认配置中禁用这四种高风险解析类型；PNG、JPEG、WebP 等正常构建格式不受影响。每次发布会运行 `npm run test:image-size-security`。
 
 ## 当前限制
 

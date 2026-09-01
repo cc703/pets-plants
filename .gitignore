@@ -57,6 +57,12 @@ docs/design-draft/*-full.png
 docs/design-draft/pet-planet-commerce-design*.png
 server/cleanup-readme.sql
 
+# vendored security patch runtime files
+!vendor/image-size/
+!vendor/image-size/dist/
+!vendor/image-size/dist/**
+vendor/image-size/Readme.md
+
 # typescript
 *.tsbuildinfo
 

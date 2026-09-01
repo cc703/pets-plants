@@ -19,6 +19,7 @@ function Invoke-ReleaseCheck {
 Invoke-ReleaseCheck -Name 'typecheck' -Command { npm run typecheck }
 Invoke-ReleaseCheck -Name 'unit checks' -Command { npm run test:unit }
 Invoke-ReleaseCheck -Name 'sensitive config scan' -Command { npm run test:secrets }
+Invoke-ReleaseCheck -Name 'image parser security check' -Command { npm run test:image-size-security }
 Invoke-ReleaseCheck -Name 'migration tests' -Command { npm run test:migrations }
 Invoke-ReleaseCheck -Name 'database summary' -Command { npm run db:summary }
 Invoke-ReleaseCheck -Name 'server smoke' -Command { npm run test:server:smoke }

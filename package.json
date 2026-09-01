@@ -43,6 +43,7 @@
     "test:server:smoke": "node server/test-api.js",
     "test:migrations": "node scripts/migration-contract.test.js && node scripts/migration-live.test.js",
     "test:secrets": "node scripts/sensitive-config-scan.js",
+    "test:image-size-security": "node scripts/image-size-security.test.js",
     "test:unit": "node server/email-auth-unit.test.js && node server/upload-service.test.js && node server/runtime-config.test.js",
     "test:product": "npm run typecheck && npm run test:server:smoke",
     "test:ui:smoke": "node scripts/product-ui-smoke.js",
@@ -52,5 +53,8 @@
     "verify:pre-release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/pre-release-verify.ps1",
     "verify": "npm run typecheck && npm run db:summary && npm run test:server:smoke"
   },
-  "private": true
+  "private": true,
+  "overrides": {
+    "image-size": "file:vendor/image-size"
+  }
 }
