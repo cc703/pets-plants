@@ -56,6 +56,7 @@ docs/project-progress-report-*.md
 docs/design-draft/*-full.png
 docs/design-draft/pet-planet-commerce-design*.png
 server/cleanup-readme.sql
+scripts/legacy-migration-rehearsal.ps1
 
 # vendored security patch runtime files
 !vendor/image-size/

@@ -38,10 +38,6 @@ const migrationReadme = fs.readFileSync(
   path.join(__dirname, '..', 'server', 'migrations', 'README.md'),
   'utf8',
 );
-const rehearsalScript = fs.readFileSync(
-  path.join(__dirname, 'legacy-migration-rehearsal.ps1'),
-  'utf8',
-);
 
 assert.match(
   statsMigration,
@@ -123,8 +119,6 @@ assert.match(fullSchema, /CREATE TABLE IF NOT EXISTS email_login_codes/i, 'full 
 assert.match(emailVerificationMigration, /CREATE TABLE IF NOT EXISTS email_verification_tokens/i);
 assert.match(emailLoginMigration, /CREATE TABLE IF NOT EXISTS email_login_codes/i);
 assert.match(migrationReadme, /009_email_verification\.sql[\s\S]*010_email_login_codes\.sql/i, 'migration README must include email migrations');
-assert.match(rehearsalScript, /'009_email_verification\.sql'[\s\S]*'010_email_login_codes\.sql'/i, 'rehearsal must include email migrations');
-
 assert.match(
   migration,
   /posts_circle_index_exists[\s\S]*COLUMN_NAME = 'circle_id'[\s\S]*PREPARE add_posts_circle_index/i,
