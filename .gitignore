@@ -38,8 +38,24 @@ server/.env
 
 # local assistant/editor artifacts
 .claude/
+.codex/
+.agents/
+.omx/
 CLAUDE.md
+AGENTS.md
+GEMINI.md
 *.docx
+
+# internal workflow and generated design artifacts
+docs/superpowers/
+docs/release/
+docs/current-code-review-*.md
+docs/engineering-baseline-*.md
+docs/pet-user-experience-evaluation-plan-*.md
+docs/project-progress-report-*.md
+docs/design-draft/*-full.png
+docs/design-draft/pet-planet-commerce-design*.png
+server/cleanup-readme.sql
 
 # typescript
 *.tsbuildinfo

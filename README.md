@@ -31,8 +31,6 @@
 完整设计与边界资料：
 
 - [移动端 11 屏设计稿](docs/design-draft/pet-planet-mobile-design.html)
-- [商城与支付模块边界](docs/superpowers/specs/2026-08-29-commerce-module-boundaries.md)
-- [发布候选检查清单](docs/release/2026-08-25-candidate-freeze.md)
 
 ## 技术架构
 
@@ -55,7 +53,6 @@ server/routes/          Express API 路由
 server/services/        邮件、上传等基础服务
 server/migrations/      旧数据库增量迁移
 docs/design-draft/      产品设计稿与预览图
-docs/superpowers/       已确认的设计、计划与边界
 scripts/                契约、迁移、烟测与发布验证
 ```
 
